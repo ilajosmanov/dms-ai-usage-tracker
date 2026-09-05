@@ -101,7 +101,7 @@ PluginComponent {
             collectorError: root.collectorError
             now: root.now
             showPacing: root.pluginData.showPacing !== false
-            maxBodyHeight: root.parentScreen ? Math.max(160, Math.min(650, root.parentScreen.height - 220)) : 650
+            maxBodyHeight: root.parentScreen ? Math.max(220, root.parentScreen.height - 160) : 1000
             onRefreshRequested: root.refresh(true)
             onDashboardRequested: url => Qt.openUrlExternally(url)
             onProviderSelected: provider => root.selectedProvider = provider

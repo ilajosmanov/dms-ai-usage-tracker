@@ -20,8 +20,7 @@ To uninstall, remove the widget from the bar, disable the plugin, and unlink the
 ## Usage
 
 The bar shows one circle followed by color-matched percentages, without a text title.
-Hover an individual **Daily peak** bar to see which models were observed locally for that date in
-Codex, pi, OMP, opencode, or Claude Code sessions. The ring is a proportional breakdown of the displayed primary-window
+The ring is a proportional breakdown of the displayed primary-window
 quota percentages: 60% Codex and 20% Claude produces a three-quarter Codex segment
 and one-quarter Claude segment. Segments run clockwise from the top, Codex first
 in the OpenAI green, then Claude in the Anthropic coral. Provider color is the one
@@ -55,7 +54,14 @@ Anthropic's undocumented Nimbus Quill placeholder are intentionally hidden; real
 model-scoped Claude limits such as Fable remain visible.
 
 The seven-day chart records daily peak primary-window utilization observed by this
-widget. Unsampled days are missing, not zero. It is not a token activity or cost chart.
+widget. Unsampled days are missing, not zero. It is a quota chart, not a spend chart.
+
+**Models this week** is a separate block, one bar per model, for each provider. It totals
+the tokens each model processed in local sessions over the last seven days — input, output,
+and cache reads — and scales every bar against the busiest model. This is the one part of
+the widget that is *not* account-wide: it counts what ran in session logs on this machine,
+so another device's work is not included, and it is neither billing nor quota. Codex,
+pi, OMP, opencode, and Claude Code sessions all count toward it.
 
 ## Connections
 
@@ -91,8 +97,15 @@ appear as zero usage.
 An account is identified by its provider account id or token subject, falling back
 to the credential store it came from, so a rotated token keeps its recorded history.
 
-Only usage metadata, recent model names, opaque identity hashes, and a keyed credential
-fingerprint are cached in `$XDG_CACHE_HOME/dms-ai-usage/usage.json`
+Session logs are read incrementally. A file already scanned is re-read only from the byte
+where the previous scan stopped, and Codex, which reports a running session total, is read
+from its head and tail alone; a first scan of a long history is spread over the next few
+polls rather than blocking one. The scan reads token counts and model ids. It never reads
+message content, and its bookkeeping stays in
+`$XDG_CACHE_HOME/dms-ai-usage/activity.json` (mode 0600).
+
+Only usage metadata, model names with their local token totals, opaque identity hashes,
+and a keyed credential fingerprint are cached in `$XDG_CACHE_HOME/dms-ai-usage/usage.json`
 (default `~/.cache/dms-ai-usage/usage.json`, mode 0600, in a 0700 directory).
 The fingerprint exists solely to notice that you signed in again; it is an HMAC under a
 random per-install key in `fingerprint.key`, so the cache holds nothing a reader could

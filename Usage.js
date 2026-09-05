@@ -128,33 +128,47 @@ function representativeAccount(accounts) {
     return selected;
 }
 
-function stringList(value) {
-    if (!value || typeof value.length !== "number") return [];
-    var result = [];
-    for (var i = 0; i < value.length; i++) {
-        if (typeof value[i] === "string" && value[i] !== "")
-            result.push(value[i]);
-    }
-    return result;
-}
-
-function days(history, now, modelsByDay) {
+function days(history, now) {
     var result = [];
     var today = new Date(now);
     for (var offset = 6; offset >= 0; offset--) {
         var date = new Date(today.getFullYear(), today.getMonth(), today.getDate() - offset);
         var key = date.getFullYear() + "-" + ("0" + (date.getMonth() + 1)).slice(-2) + "-" + ("0" + date.getDate()).slice(-2);
         var match = (history || []).filter(function(h) { return h.date === key; })[0];
-        var models = stringList(modelsByDay ? modelsByDay[key] : null);
         result.push({date: key, label: ["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"][date.getDay()],
-            value: match ? match.value : null, models: models});
+            value: match ? match.value : null});
     }
     return result;
 }
 
 function dayTooltip(day) {
     var peak = day && day.value !== null && typeof day.value === "number" ? Math.round(day.value) + "% peak" : "No usage sample";
-    var names = stringList(day ? day.models : null);
-    var models = names.length ? names.join(", ") : "Not observed locally";
-    return (day ? day.date : "") + " · " + peak + "\nModels · " + models;
+    return (day ? day.date : "") + " · " + peak;
+}
+
+// Token counts run to ten figures, so a bar chart needs a short, honest label.
+function tokens(value) {
+    if (typeof value !== "number" || !isFinite(value) || value < 0) return "—";
+    if (value >= 1e9) return (value / 1e9).toFixed(1) + "B";
+    if (value >= 1e6) return (value / 1e6).toFixed(1) + "M";
+    if (value >= 1e3) return (value / 1e3).toFixed(1) + "K";
+    return String(Math.round(value));
+}
+
+function modelBars(account) {
+    var models = (account && account.models) || [];
+    var top = 0;
+    for (var i = 0; i < models.length; i++) {
+        if (models[i] && typeof models[i].tokens === "number" && isFinite(models[i].tokens) && models[i].tokens > top)
+            top = models[i].tokens;
+    }
+    var result = [];
+    for (var j = 0; j < models.length; j++) {
+        var entry = models[j];
+        if (!entry || typeof entry.name !== "string" || !entry.name || typeof entry.tokens !== "number" || !(entry.tokens > 0))
+            continue;
+        // Bars are relative to the busiest model, so the smallest one stays visible.
+        result.push({name: entry.name, tokens: entry.tokens, label: tokens(entry.tokens), share: entry.tokens / top});
+    }
+    return result;
 }

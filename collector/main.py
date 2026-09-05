@@ -8,39 +8,18 @@ import json
 import hashlib
 import os
 import secrets
-import tempfile
 import time
 from datetime import datetime, timedelta
 from pathlib import Path
 
-from .credentials import discover, read_json
-from .models import recent_models_by_day
+from . import activity
+from .credentials import discover
+from .jsonfile import atomic_json, private_dir, read_json
 from .providers import UsageError, fetch, hidden, number
 
 PROVIDERS = {"codex": "Codex", "claude": "Claude"}
 # Scheduling state the widget never reads; kept in the private cache, not published.
 INTERNAL = ("credentialFingerprint", "lastAttempt", "nextAttempt", "retryNotBefore")
-
-
-def atomic_json(path, value, mode=0o600):
-    path.parent.mkdir(parents=True, exist_ok=True)
-    fd, temporary = tempfile.mkstemp(prefix=".usage-", dir=path.parent)
-    try:
-        with os.fdopen(fd, "w") as stream:
-            json.dump(value, stream, allow_nan=False)
-        os.chmod(temporary, mode)
-        os.replace(temporary, path)
-    finally:
-        if os.path.exists(temporary):
-            os.unlink(temporary)
-
-
-def private_dir(path):
-    """Create, and keep, a directory only this user can read."""
-    path.mkdir(parents=True, exist_ok=True, mode=0o700)
-    if path.stat().st_mode & 0o077:
-        path.chmod(0o700)
-    return path
 
 
 def fingerprint_key(directory):
@@ -201,12 +180,14 @@ def main():
         try:
             fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
         except OSError:
+            # Another collector owns the scan; read its findings instead of repeating them.
             result = cached_snapshot(cache_dir / "usage.json", time.time())
+            models = activity.scan(cache_dir / "activity.json", budget=0)
         else:
             result = collect(config, cache_dir / "usage.json", args.offline, args.force)
-    models = recent_models_by_day()
+            models = activity.scan(cache_dir / "activity.json")
     for account in result["accounts"]:
-        account["modelsByDay"] = models.get(account["provider"], {})
+        account["models"] = models.get(account["provider"], [])
     print(json.dumps(result, allow_nan=False))
 
 

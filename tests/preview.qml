@@ -4,6 +4,7 @@ import Quickshell
 import Quickshell.Io
 import qs.Common
 import qs.Plugin
+import "Plugin/Usage.js" as Usage
 
 ShellRoot {
     id: preview
@@ -39,12 +40,12 @@ ShellRoot {
         title: "AI Usage Preview"
         visible: true
         implicitWidth: 420
-        implicitHeight: 820
+        implicitHeight: 1080
         color: Theme.surface
         Rectangle {
             id: frame
             width: preview.stage === 5 ? 340 : preview.stage >= 7 ? 240 : 420
-            height: preview.stage === 5 ? 620 : preview.stage === 8 ? 120 : preview.stage >= 7 ? 64 : 820
+            height: preview.stage === 5 ? 620 : preview.stage === 8 ? 120 : preview.stage >= 7 ? 64 : 1080
             color: Theme.surface
             UsageDashboard {
                 id: dashboard
@@ -52,7 +53,7 @@ ShellRoot {
                 visible: preview.stage < 7
                 width: parent.width - 16
                 snapshot: preview.data
-                maxBodyHeight: preview.stage === 5 ? 450 : 650
+                maxBodyHeight: preview.stage === 5 ? 450 : 1000
                 closePopout: () => preview.closeRequests++
                 onDashboardRequested: url => preview.openedUrl = url
             }
@@ -131,15 +132,22 @@ ShellRoot {
             } else if (preview.stage === 0) {
                 if (preview.findNamed(dashboard, "subscriptionTitle").text !== "Codex · Pro")
                     throw new Error("Subscription type must be capitalized");
-                var todayBar = preview.findNamed(dashboard, "dailyPeakColumn-6");
-                if (!todayBar || todayBar.Accessible.name.indexOf("GPT-5.6 Sol") === -1)
-                    throw new Error("Today's daily peak bar must expose today's model names: "
-                        + (todayBar ? todayBar.Accessible.name : "missing bar") + " / "
-                        + JSON.stringify(dashboard.account.modelsByDay));
+                var busiest = preview.findNamed(dashboard, "modelName-0");
+                var busiestTokens = preview.findNamed(dashboard, "modelTokens-0");
+                if (!busiest || busiest.text !== "GPT-5.6 Sol" || busiestTokens.text !== "1.6B")
+                    throw new Error("The models block must lead with the busiest model: "
+                        + (busiest ? busiest.text + " " + busiestTokens.text : "missing block"));
+                var widest = preview.findNamed(dashboard, "modelBarFill-0");
+                var narrower = preview.findNamed(dashboard, "modelBarFill-1");
+                if (!(widest.width > narrower.width))
+                    throw new Error("Model bars must be proportional to their token totals");
             } else if (preview.stage === 1) {
-                var claudeTodayBar = preview.findNamed(dashboard, "dailyPeakColumn-6");
-                if (!claudeTodayBar || claudeTodayBar.Accessible.name.indexOf("Claude Opus 5") === -1)
-                    throw new Error("Claude's daily peak bar must expose today's model names");
+                var claudeModel = preview.findNamed(dashboard, "modelName-0");
+                if (!claudeModel || claudeModel.text !== "Claude Opus 5")
+                    throw new Error("Claude's models block must list Claude models");
+                var tooltipText = Usage.dayTooltip(Usage.days(dashboard.account.history, dashboard.now)[6]);
+                if (tooltipText.indexOf("Models") !== -1)
+                    throw new Error("Model names belong in their own block, not the daily hover");
             }
             settle.start();
         }

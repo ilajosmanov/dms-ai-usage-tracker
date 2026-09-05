@@ -12,9 +12,10 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from unittest.mock import patch
 
+from collector import activity
 from collector.credentials import discover
-from collector.main import atomic_json, collect, fingerprint_key, private_dir, record_history, refresh_group
-from collector.models import recent_models_by_day
+from collector.jsonfile import atomic_json, private_dir
+from collector.main import collect, fingerprint_key, record_history, refresh_group
 from collector.providers import UsageError, parse_claude, parse_codex, request, window
 
 
@@ -294,52 +295,116 @@ class CredentialTests(unittest.TestCase):
             self.assertFalse(any("do-not-use" in c["secret"] for g in result.values() for c in g))
 
 
-class ModelTests(unittest.TestCase):
-    def test_recent_models_are_grouped_by_session_day(self):
+class ActivityTests(unittest.TestCase):
+    def setUp(self):
+        self.now = time.time()
+        self.today = str(datetime.fromtimestamp(self.now).date())
+        self.yesterday = str(datetime.fromtimestamp(self.now).date() - timedelta(days=1))
+
+    def write(self, home, path, rows, age=0):
+        target = home / path
+        target.parent.mkdir(parents=True, exist_ok=True)
+        with target.open("a") as stream:
+            for row in rows:
+                stream.write(json.dumps(row) + "\n")
+        os.utime(target, (self.now - age, self.now - age))
+        return target
+
+    def claude_turn(self, model, stamp, tokens):
+        """Split `tokens` across the four fields Anthropic reports, summing to exactly `tokens`."""
+        parts = {"input_tokens": tokens // 4, "cache_read_input_tokens": tokens // 2,
+                 "cache_creation_input_tokens": tokens // 8}
+        parts["output_tokens"] = tokens - sum(parts.values())
+        return {"timestamp": stamp, "message": {"model": model, "usage": parts}}
+
+    def test_weekly_tokens_are_totalled_per_model_and_provider(self):
         with tempfile.TemporaryDirectory() as folder, patch.dict(os.environ, {}, clear=True):
             home = Path(folder)
-            now = time.time()
-            today = str(datetime.fromtimestamp(now).date())
-            yesterday = str(datetime.fromtimestamp(now).date() - timedelta(days=1))
-
-            def session(path, rows, age=0):
-                target = home / path
-                target.parent.mkdir(parents=True, exist_ok=True)
-                target.write_text("\n".join(json.dumps(row) for row in rows) + "\n")
-                os.utime(target, (now - age, now - age))
-
-            session(".codex/sessions/current.jsonl", [
-                {"type": "turn_context", "timestamp": datetime.fromtimestamp(now).astimezone().isoformat(),
-                 "payload": {"model": "gpt-5.6-sol"}},
-                {"type": "turn_context", "payload": {"model": "gpt-5.3-codex-spark"}},
+            iso = datetime.fromtimestamp(self.now).astimezone().isoformat()
+            self.write(home, ".claude/projects/a.jsonl", [
+                self.claude_turn("claude-opus-5", iso, 1000),
+                self.claude_turn("claude-opus-5", iso, 2000),
+                self.claude_turn("claude-fable-5", iso, 400),
+                self.claude_turn("<synthetic>", iso, 9999),
             ])
-            session(".omp/agent/sessions/current.jsonl", [
-                {"timestamp": datetime.fromtimestamp(now - 86400).astimezone().isoformat(),
-                 "model": "openai-codex/gpt-6-astra"}
+            self.write(home, ".codex/sessions/s.jsonl", [
+                {"type": "turn_context", "payload": {"model": "gpt-5.6-sol"}},
+                {"timestamp": iso, "payload": {"type": "token_count", "info": {
+                    "total_token_usage": {"total_tokens": 500}}}},
+                {"timestamp": iso, "payload": {"type": "token_count", "info": {
+                    "total_token_usage": {"total_tokens": 5000}}}},
             ])
-            session(".pi/agent/sessions/current.jsonl", [{"message": {"model": "gpt-5.6-terra"}}])
-            session(".claude/projects/current.jsonl", [
-                {"message": {"model": "claude-opus-5"}},
-                {"message": {"model": "<synthetic>"}},
+            self.write(home, ".omp/agent/sessions/s.jsonl", [
+                {"timestamp": iso, "message": {"model": "openai-codex/gpt-6-astra",
+                                               "usage": {"totalTokens": 750}}},
+                {"timestamp": iso, "message": {"model": "claude-opus-5", "usage": {"totalTokens": 99999}}},
             ])
-            session(".claude/projects/old.jsonl", [{"message": {"model": "claude-fable-5"}}], 8 * 86400)
-            opencode = home / ".local/share/opencode/opencode.db"
-            opencode.parent.mkdir(parents=True)
-            with closing(sqlite3.connect(opencode)) as connection:
-                connection.execute("CREATE TABLE session (model TEXT, time_updated INTEGER)")
-                connection.execute("INSERT INTO session VALUES (?, ?)",
-                                   (json.dumps({"id": "gpt-5.6-luna", "providerID": "openai"}), int(now * 1000)))
-                connection.execute("INSERT INTO session VALUES (?, ?)",
-                                   (json.dumps({"id": "claude-opus-5", "providerID": "anthropic"}), int(now * 1000)))
-                connection.commit()
+            result = activity.scan(home / "cache/activity.json", home, self.now)
+        self.assertEqual(result["claude"], [{"name": "Claude Opus 5", "tokens": 3000},
+                                            {"name": "Claude Fable 5", "tokens": 400}])
+        self.assertEqual(result["codex"], [{"name": "GPT-5.6 Sol", "tokens": 5000},
+                                           {"name": "GPT-6 Astra", "tokens": 750}],
+                         "Codex reports a running session total, and OMP hosts other providers too")
 
-            self.assertEqual(recent_models_by_day(home, now), {
-                "codex": {
-                    today: ["GPT-5.6 Sol", "GPT-5.6 Terra", "GPT-5.6 Luna"],
-                    yesterday: ["GPT-6 Astra"],
-                },
-                "claude": {today: ["Claude Opus 5"]},
-            })
+    def test_appended_turns_are_read_without_recounting_the_file(self):
+        with tempfile.TemporaryDirectory() as folder, patch.dict(os.environ, {}, clear=True):
+            home = Path(folder)
+            cache = home / "cache/activity.json"
+            iso = datetime.fromtimestamp(self.now).astimezone().isoformat()
+            path = self.write(home, ".claude/projects/a.jsonl", [self.claude_turn("claude-opus-5", iso, 1000)])
+            self.assertEqual(activity.scan(cache, home, self.now)["claude"][0]["tokens"], 1000)
+            with patch("collector.activity.scan_turns", side_effect=AssertionError("unchanged file rescanned")):
+                self.assertEqual(activity.scan(cache, home, self.now)["claude"][0]["tokens"], 1000)
+            self.write(home, ".claude/projects/a.jsonl", [self.claude_turn("claude-opus-5", iso, 500)])
+            os.utime(path, (self.now + 1, self.now + 1))
+            self.assertEqual(activity.scan(cache, home, self.now)["claude"][0]["tokens"], 1500)
+
+    def test_partial_trailing_record_is_reread_when_complete(self):
+        with tempfile.TemporaryDirectory() as folder, patch.dict(os.environ, {}, clear=True):
+            home = Path(folder)
+            cache = home / "cache/activity.json"
+            iso = datetime.fromtimestamp(self.now).astimezone().isoformat()
+            path = self.write(home, ".claude/projects/a.jsonl", [self.claude_turn("claude-opus-5", iso, 1000)])
+            partial = json.dumps(self.claude_turn("claude-opus-5", iso, 800))
+            with path.open("a") as stream:
+                stream.write(partial[:40])
+            os.utime(path, (self.now + 1, self.now + 1))
+            self.assertEqual(activity.scan(cache, home, self.now)["claude"][0]["tokens"], 1000)
+            with path.open("a") as stream:
+                stream.write(partial[40:] + "\n")
+            os.utime(path, (self.now + 2, self.now + 2))
+            self.assertEqual(activity.scan(cache, home, self.now)["claude"][0]["tokens"], 1800,
+                             "a record still being written must be counted once, after it is complete")
+
+    def test_only_the_last_seven_days_count(self):
+        with tempfile.TemporaryDirectory() as folder, patch.dict(os.environ, {}, clear=True):
+            home = Path(folder)
+            recent = datetime.fromtimestamp(self.now).astimezone().isoformat()
+            old = datetime.fromtimestamp(self.now - 30 * 86400).astimezone().isoformat()
+            self.write(home, ".claude/projects/a.jsonl", [self.claude_turn("claude-opus-5", recent, 1000),
+                                                          self.claude_turn("claude-opus-5", old, 5000)])
+            self.write(home, ".claude/projects/stale.jsonl", [self.claude_turn("claude-opus-5", recent, 7000)],
+                       age=30 * 86400)
+            result = activity.scan(home / "cache/activity.json", home, self.now)
+        self.assertEqual(result["claude"], [{"name": "Claude Opus 5", "tokens": 1000}])
+
+    def test_a_zero_budget_reports_without_touching_any_log(self):
+        with tempfile.TemporaryDirectory() as folder, patch.dict(os.environ, {}, clear=True):
+            home = Path(folder)
+            cache = home / "cache/activity.json"
+            iso = datetime.fromtimestamp(self.now).astimezone().isoformat()
+            self.write(home, ".claude/projects/a.jsonl", [self.claude_turn("claude-opus-5", iso, 1000)])
+            activity.scan(cache, home, self.now)
+            with patch("collector.activity.scan_turns", side_effect=AssertionError("log opened")):
+                result = activity.scan(cache, home, self.now, budget=0)
+        self.assertEqual(result["claude"], [{"name": "Claude Opus 5", "tokens": 1000}])
+
+    def test_scan_state_is_private(self):
+        with tempfile.TemporaryDirectory() as folder, patch.dict(os.environ, {}, clear=True):
+            home = Path(folder)
+            cache = home / "cache/activity.json"
+            activity.scan(cache, home, self.now)
+            self.assertEqual(cache.stat().st_mode & 0o777, 0o600)
 
 
 if __name__ == "__main__":

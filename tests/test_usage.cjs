@@ -16,12 +16,36 @@ test('provider accents always use their brand colors', () => {
     assert.equal(usage.accent('unknown'), '#10A37F', 'an unknown provider still gets a stable color');
 });
 
-test('daily bars carry that date models into their hover text', () => {
-    const date = usage.days([], now, {})[6].date;
-    const days = usage.days([{date, value: 42}], now, {[date]: ['GPT-6 Astra', 'GPT-5.6 Sol']});
-    assert.equal(days[6].models.join(','), 'GPT-6 Astra,GPT-5.6 Sol');
-    assert.equal(usage.dayTooltip(days[6]), `${date} · 42% peak\nModels · GPT-6 Astra, GPT-5.6 Sol`);
-    assert.equal(usage.dayTooltip(usage.days([], now, {})[6]), `${date} · No usage sample\nModels · Not observed locally`);
+test('daily bars report their peak, and nothing they did not sample', () => {
+    const date = usage.days([], now)[6].date;
+    const days = usage.days([{date, value: 42}], now);
+    assert.equal(usage.dayTooltip(days[6]), `${date} · 42% peak`);
+    assert.equal(usage.dayTooltip(usage.days([], now)[6]), `${date} · No usage sample`);
+});
+
+test('token counts shorten without losing their magnitude', () => {
+    assert.equal(usage.tokens(1632925607), '1.6B');
+    assert.equal(usage.tokens(80700000), '80.7M');
+    assert.equal(usage.tokens(334800), '334.8K');
+    assert.equal(usage.tokens(512), '512');
+    for (const bad of [null, undefined, NaN, Infinity, -1, 'x'])
+        assert.equal(usage.tokens(bad), '—');
+});
+
+test('model bars scale against the busiest model and drop what was not observed', () => {
+    const bars = usage.modelBars({models: [
+        {name: 'GPT-5.6 Sol', tokens: 1000},
+        {name: 'GPT-6 Astra', tokens: 250},
+        {name: 'GPT-5.6 Luna', tokens: 0},
+        {name: '', tokens: 900},
+        {name: 'Bad', tokens: 'lots'},
+    ]});
+    assert.equal(bars.map(b => b.name).join(','), 'GPT-5.6 Sol,GPT-6 Astra');
+    assert.equal(bars[0].share, 1);
+    assert.equal(bars[1].share, 0.25);
+    assert.equal(bars[1].label, '250');
+    assert.equal(usage.modelBars({}).length, 0);
+    assert.equal(usage.modelBars(null).length, 0);
 });
 
 test('only the consuming provider owns the full ring and percentage', () => {

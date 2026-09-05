@@ -8,15 +8,8 @@ import sqlite3
 from contextlib import closing
 from pathlib import Path
 
+from .jsonfile import read_json
 from .stores import roots
-
-
-def read_json(path):
-    try:
-        value = json.loads(Path(path).read_text())
-        return value if isinstance(value, dict) else {}
-    except (OSError, ValueError):
-        return {}
 
 
 def header_safe(value):

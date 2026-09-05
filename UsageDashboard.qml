@@ -13,7 +13,7 @@ Column {
     property string collectorError: ""
     property bool showPacing: true
     property real now: Date.now()
-    property real maxBodyHeight: 650
+    property real maxBodyHeight: 1000
     property var closePopout: null
     signal refreshRequested()
     signal providerSelected(string provider)
@@ -21,6 +21,7 @@ Column {
     readonly property var accounts: Usage.providerAccounts(snapshot, provider)
     readonly property var account: accounts.filter(function(a) { return a.id === root.accountId; })[0] || Usage.representativeAccount(accounts) || ({windows: [], history: [], status: "loading", name: "", label: "", plan: "", message: "", sources: []})
     readonly property var windows: account.windows || []
+    readonly property var models: Usage.modelBars(account)
     readonly property color providerColor: Usage.accent(provider)
     readonly property color cautionColor: Theme.isLightMode ? Qt.darker(Theme.warning, 1.8) : Theme.warning
     padding: 12
@@ -294,7 +295,7 @@ Column {
                         width: parent.width
                         height: 88
                         spacing: 10
-                        readonly property var days: Usage.days(root.account.history, root.now, root.account.modelsByDay || ({}))
+                        readonly property var days: Usage.days(root.account.history, root.now)
                         readonly property real maximum: 100
                         Repeater {
                             model: chart.days
@@ -335,6 +336,83 @@ Column {
                         text: "Last 7 days · recorded by this widget"
                         color: Theme.surfaceVariantText
                         font.pixelSize: Math.round(Theme.fontScale * 11)
+                    }
+                }
+            }
+
+            Rectangle {
+                objectName: "modelsCard"
+                width: parent.width
+                implicitHeight: modelsColumn.implicitHeight + 32
+                radius: Theme.cornerRadius
+                color: Theme.surfaceContainerHigh
+                visible: root.models.length > 0
+                Column {
+                    id: modelsColumn
+                    x: 16; y: 16; width: parent.width - 32
+                    spacing: 11
+                    StyledText {
+                        width: parent.width
+                        textFormat: Text.PlainText
+                        text: "Models this week"
+                        color: Theme.surfaceText
+                        font.pixelSize: Math.round(Theme.fontScale * 14)
+                        elide: Text.ElideRight
+                    }
+                    Repeater {
+                        model: root.models
+                        Column {
+                            id: modelRow
+                            required property var modelData
+                            required property int index
+                            objectName: "modelBar-" + index
+                            width: modelsColumn.width
+                            spacing: 4
+                            Item {
+                                width: parent.width
+                                height: modelName.implicitHeight
+                                StyledText {
+                                    id: modelName
+                                    objectName: "modelName-" + modelRow.index
+                                    width: parent.width - modelTokens.implicitWidth - 8
+                                    textFormat: Text.PlainText
+                                    text: modelRow.modelData.name
+                                    color: Theme.surfaceText
+                                    font.pixelSize: Math.round(Theme.fontScale * 13)
+                                    elide: Text.ElideRight
+                                }
+                                StyledText {
+                                    id: modelTokens
+                                    objectName: "modelTokens-" + modelRow.index
+                                    anchors.right: parent.right
+                                    textFormat: Text.PlainText
+                                    text: modelRow.modelData.label
+                                    color: Theme.surfaceVariantText
+                                    font.pixelSize: Math.round(Theme.fontScale * 13)
+                                    font.weight: Font.Medium
+                                }
+                            }
+                            Rectangle {
+                                width: parent.width
+                                height: 6
+                                radius: 3
+                                color: Theme.withAlpha(Theme.surfaceText, 0.1)
+                                Rectangle {
+                                    objectName: "modelBarFill-" + modelRow.index
+                                    width: Math.max(3, parent.width * modelRow.modelData.share)
+                                    height: parent.height
+                                    radius: parent.radius
+                                    color: root.providerColor
+                                }
+                            }
+                        }
+                    }
+                    StyledText {
+                        width: parent.width
+                        text: "Tokens processed on this machine · not billing or quota"
+                        color: Theme.surfaceVariantText
+                        font.pixelSize: Math.round(Theme.fontScale * 11)
+                        wrapMode: Text.Wrap
                     }
                 }
             }

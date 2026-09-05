@@ -12,7 +12,7 @@ from pathlib import Path
 
 repo = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(repo))
-from collector.main import atomic_json
+from collector.jsonfile import atomic_json
 
 parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument("--no-bar", action="store_true", help="Install only; select the widget in DMS settings yourself.")
