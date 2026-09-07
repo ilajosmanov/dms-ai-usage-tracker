@@ -48,58 +48,82 @@ test('model bars scale against the busiest model and drop what was not observed'
     assert.equal(usage.modelBars(null).length, 0);
 });
 
-test('only the consuming provider owns the full ring and percentage', () => {
+test('only the consuming provider is metered, and idle ones drop out', () => {
     for (const provider of ['codex', 'claude']) {
         const codex = account('codex', provider === 'codex' ? 37 : 0);
         const claude = account('claude', provider === 'claude' ? 56 : 0);
-        const segments = usage.ringSegments(codex, claude);
-        assert.equal(segments.length, 1);
-        assert.equal(segments[0].provider, provider);
-        assert.equal(segments[0].share, 1, 'one consumer owns the entire circle regardless of utilization');
-        assert.equal(segments[0].sweep, 2 * Math.PI, 'single-provider ring fills clockwise');
-        assert.equal(segments[0].start, -Math.PI / 2, 'single-provider ring starts at the top');
         assert.equal(usage.barAccounts(codex, claude).map(a => a.provider).join(','), provider);
     }
+    assert.equal(usage.barAccounts(account('codex', 60), account('claude', 20)).length, 2,
+        'two consumers get two bars');
+    assert.equal(usage.barAccounts(account('codex', 0), account('claude', 0)).length, 2,
+        'a pair of known-idle accounts still reports both, at zero');
+    assert.equal(usage.barAccounts({windows: []}, {windows: []}).length, 0);
+    assert.equal(usage.barAccounts(account('codex', NaN), account('claude', 0)).length, 1);
 });
-test('ring segments are proportional to quota percentages and cover the whole circle', () => {
-    const segments = usage.ringSegments(account('codex', 60), account('claude', 20));
-    assert.equal(segments.length, 2);
-    assert.equal(segments[0].share, 0.75);
-    assert.equal(segments[1].share, 0.25);
-    assert.equal(segments[0].start, -Math.PI / 2);
-    assert.equal(segments[0].sweep, Math.PI * 1.5);
-    assert.equal(segments[1].start, segments[0].start + segments[0].sweep);
-    assert.equal(segments[0].sweep + segments[1].sweep, Math.PI * 2);
-    assert.equal(usage.percent({used: segments[0].used}), '60%', 'numeric quota percentages stay unchanged');
-    assert.equal(usage.percent({used: segments[1].used}), '20%');
-});
-test('equal usage splits equally; fractional usage is not rounded away', () => {
-    const equal = usage.ringSegments(account('codex', 12), account('claude', 12));
-    assert.equal(equal[0].share, 0.5);
-    assert.equal(equal[1].share, 0.5);
-    const tiny = usage.ringSegments(account('codex', 0.2), account('claude', 0.6, 'stale'));
-    assert.equal(tiny[0].share, 0.25);
-    assert.ok(Math.abs(tiny[1].share - 0.75) < 1e-12);
-    assert.equal(tiny[1].stale, true);
-});
-test('reset transitions from split back to the remaining provider', () => {
-    const codex = account('codex', 50), claude = account('claude', 50);
-    assert.equal(usage.ringSegments(codex, claude).length, 2);
-    codex.windows[0].used = 0;
-    assert.equal(usage.ringSegments(codex, claude)[0].provider, 'claude');
-    assert.equal(usage.ringSegments(codex, claude).length, 1);
-});
-test('idle and unavailable providers never produce a split or fabricated usage', () => {
-    for (const pair of [[account('codex', 0), account('claude', 0)], [{windows: []}, {windows: []}]]) {
-        const segments = usage.ringSegments(...pair);
-        assert.equal(segments.length, 1);
-        assert.equal(segments[0].provider, '');
-    }
+
+test('percentages stay honest at both ends of the scale', () => {
+    assert.equal(usage.percent({used: 60}), '60%');
+    assert.equal(usage.percent({used: 0.2}), '<1%');
     assert.equal(usage.percent({used: NaN}), '—');
     assert.equal(usage.percent({used: Infinity}), '—');
-    assert.equal(usage.barAccounts(account('codex', NaN), account('claude', 0)).length, 1);
-    assert.equal(usage.percent({used: 0.2}), '<1%');
 });
+
+test('brand fills never change; brand text darkens only on a light surface', () => {
+    assert.equal(usage.accentText('codex', false), '#10A37F', 'dark mode keeps the brand hex');
+    assert.equal(usage.accentText('claude', false), '#D97757');
+    assert.equal(usage.accentText('codex', true), '#0B8368');
+    assert.equal(usage.accentText('claude', true), '#B65A3C');
+    assert.equal(usage.accent('codex'), usage.brand('codex').accent, 'fills always use the brand color');
+});
+
+test('both providers are always shown, primary first', () => {
+    // Arrays cross the vm realm boundary, so compare their contents.
+    assert.equal(usage.orderedProviders('codex').join(','), 'codex,claude');
+    assert.equal(usage.orderedProviders('claude').join(','), 'claude,codex');
+    assert.equal(usage.orderedProviders('').join(','), 'codex,claude', 'an unset setting keeps source order');
+    assert.equal(usage.orderedProviders('gemini').join(','), 'codex,claude');
+});
+
+test('column labels shorten without inventing or losing meaning', () => {
+    assert.equal(usage.shortWindow('5-hour window'), '5-hour');
+    assert.equal(usage.shortWindow('7-day window'), '7-day');
+    assert.equal(usage.shortWindow('Fable · 7 days'), 'Fable · 7d');
+    assert.equal(usage.shortWindow(''), '');
+    assert.equal(usage.shortPlan('default claude max 5x', 'Claude'), 'Max 5x');
+    assert.equal(usage.shortPlan('pro', 'Codex'), 'Pro');
+    assert.equal(usage.shortPlan('business_plan', 'Codex'), 'Business Plan');
+    assert.equal(usage.shortPlan('', 'Codex'), '');
+    assert.equal(usage.modelLabel('Claude Haiku 4 5 20251001'), 'Claude Haiku 4 5');
+    assert.equal(usage.modelLabel('GPT-5.6 Sol'), 'GPT-5.6 Sol');
+});
+
+test('a near-limit window is called out separately from an over-pace one', () => {
+    assert.equal(usage.nearLimit({used: 90}), true);
+    assert.equal(usage.nearLimit({used: 89.4}), false);
+    assert.equal(usage.nearLimit({used: NaN}), false);
+    assert.equal(usage.nearLimit(null), false);
+    assert.equal(usage.overPace(account('codex', 95), now), true,
+        'the two signals are independent, and can both be true');
+});
+
+test('the header age reports the stalest column, never the freshest', () => {
+    assert.equal(usage.latestUpdate({accounts: [{updatedAt: 500}, {updatedAt: 200}]}), 200);
+    assert.equal(usage.latestUpdate({accounts: [{updatedAt: 500}, {}]}), 500);
+    assert.equal(usage.latestUpdate({accounts: []}), null);
+    assert.equal(usage.latestUpdate({}), null);
+    assert.equal(usage.age(null, now), 'Never synced');
+});
+
+test('row countdowns drop the prefix the header no longer repeats', () => {
+    const window = {duration: 3600, resetAt: now / 1000 + 3600};
+    assert.equal(usage.countdown(window.resetAt, now), 'Resets in 1h 0m');
+    assert.equal(usage.resetShort(window.resetAt, now), '1h 0m');
+    assert.equal(usage.resetShort(now / 1000 + 86400 * 6.9, now), '6d 21h');
+    assert.equal(usage.resetShort(null, now), '—');
+    assert.equal(usage.resetShort(now / 1000 - 10, now), '—');
+});
+
 test('each provider has its own pace warning, with unknown and stale data excluded', () => {
     assert.equal(usage.overPace(account('codex', 80), now), true);
     assert.equal(usage.overPace(account('claude', 70), now), true);

@@ -2,10 +2,13 @@
 
 // Everything provider-specific lives in this one table. Provider identity is
 // intentionally stable across themes and usage levels.
+// `accent` is the brand color and is used for every fill, unmodified in both
+// themes. `accentOnLight` is the same identity darkened to clear 4.5:1 as text
+// on a light surface; the brand hex itself only reaches ~3.3:1 there.
 var PROVIDERS = [
-    {id: "codex", label: "Codex", accent: "#10A37F",
+    {id: "codex", label: "Codex", accent: "#10A37F", accentOnLight: "#0B8368",
      dashboard: "https://chatgpt.com/codex/settings/usage"},
-    {id: "claude", label: "Claude", accent: "#D97757",
+    {id: "claude", label: "Claude", accent: "#D97757", accentOnLight: "#B65A3C",
      dashboard: "https://claude.ai/settings/usage"}
 ];
 
@@ -17,8 +20,22 @@ function accent(provider) {
     return brand(provider).accent;
 }
 
-function tabs() {
-    return PROVIDERS.map(function(p) { return {id: p.id, label: p.label}; });
+function accentText(provider, isLightMode) {
+    var entry = brand(provider);
+    return isLightMode ? entry.accentOnLight : entry.accent;
+}
+
+function brandLabel(provider) {
+    return brand(provider).label;
+}
+
+// Column order, primary first. Both providers are always shown; the setting
+// only decides which one takes the left column.
+function orderedProviders(primary) {
+    var ids = PROVIDERS.map(function(p) { return p.id; });
+    if (ids.indexOf(primary) < 1)
+        return ids;
+    return [primary].concat(ids.filter(function(id) { return id !== primary; }));
 }
 
 function providerOptions() {
@@ -45,21 +62,6 @@ function barAccounts(codex, claude) {
     return active.length ? active : known;
 }
 
-function ringSegments(codex, claude) {
-    var accounts = barAccounts(codex, claude).filter(function(a) { return primaryUsage(a) > 0; });
-    var total = accounts.reduce(function(sum, a) { return sum + primaryUsage(a); }, 0);
-    var start = -Math.PI / 2;
-    if (!total)
-        return [{provider: "", used: null, share: 0, start: start, sweep: Math.PI * 2, stale: false}];
-    return accounts.map(function(a) {
-        // Relative quota percentages, not token totals or a combined allowance.
-        var share = primaryUsage(a) / total;
-        var segment = {provider: a.provider, used: primaryUsage(a), share: share,
-            stale: a.status === "stale", start: start, sweep: Math.PI * 2 * share};
-        start += segment.sweep;
-        return segment;
-    });
-}
 
 function overPace(account, now) {
     if (!account || account.status !== "ok") return false;
@@ -69,6 +71,30 @@ function overPace(account, now) {
 
 function planLabel(plan) {
     return String(plan || "").replace(/_/g, " ").replace(/\b[a-z]/g, function(c) { return c.toUpperCase(); });
+}
+
+// A 185px column cannot hold "Default Claude Max 5x" next to the provider name
+// it already repeats, so drop the redundant words and keep the plan itself.
+function shortPlan(plan, name) {
+    var text = planLabel(plan);
+    if (name)
+        text = text.replace(new RegExp("\\b" + name + "\\b", "i"), "");
+    return text.replace(/^\s*Default\b/i, "").replace(/\s+/g, " ").trim();
+}
+
+// Window labels lose their "window" suffix in the columns; the full label stays
+// in the row tooltip and the accessible name.
+function shortWindow(label) {
+    return String(label || "").replace(/\s*window$/i, "").replace(/(\d+)\s*days$/i, "$1d").trim();
+}
+
+// Model ids carry a release date that means nothing at this width.
+function modelLabel(name) {
+    return String(name || "").replace(/\s*\b20\d{6}\b\s*$/, "").trim();
+}
+
+function nearLimit(window) {
+    return !!window && typeof window.used === "number" && isFinite(window.used) && window.used >= 90;
 }
 
 function clientLabel(label) {
@@ -86,6 +112,13 @@ function countdown(resetAt, now) {
     if (hours >= 24)
         return "Resets in " + Math.floor(hours / 24) + "d " + hours % 24 + "h";
     return "Resets in " + hours + "h " + minutes % 60 + "m";
+}
+
+// The column repeats "resets in" once per provider at most, so the rows carry
+// the bare duration.
+function resetShort(resetAt, now) {
+    var text = countdown(resetAt, now);
+    return text.indexOf("Resets in ") === 0 ? text.slice(10) : "—";
 }
 
 function pace(window, now) {
@@ -106,6 +139,21 @@ function age(updatedAt, now) {
     if (minutes < 60)
         return "Updated " + minutes + "m ago";
     return "Updated " + Math.floor(minutes / 60) + "h ago";
+}
+
+// One header, two providers: report the oldest fetch, so the age never claims
+// to be fresher than the stalest column on screen.
+function latestUpdate(snapshot) {
+    var stamps = (snapshot.accounts || []).map(function(a) { return a.updatedAt; })
+        .filter(function(t) { return typeof t === "number" && isFinite(t); });
+    return stamps.length ? Math.min.apply(null, stamps) : null;
+}
+
+// The collector writes the same note on every account; the panel shows it once.
+function sharedNote(snapshot) {
+    var notes = (snapshot.accounts || []).map(function(a) { return a.note; })
+        .filter(function(n) { return typeof n === "string" && n !== ""; });
+    return notes.length ? notes[0] : "";
 }
 
 function providerAccounts(snapshot, provider) {

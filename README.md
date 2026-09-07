@@ -19,32 +19,45 @@ To uninstall, remove the widget from the bar, disable the plugin, and unlink the
 
 ## Usage
 
-The bar shows one circle followed by color-matched percentages, without a text title.
-The ring is a proportional breakdown of the displayed primary-window
-quota percentages: 60% Codex and 20% Claude produces a three-quarter Codex segment
-and one-quarter Claude segment. Segments run clockwise from the top, Codex first
-in the OpenAI green, then Claude in the Anthropic coral. Provider color is the one
-thing here that does not follow your Material You palette, and it is identical in
-light and dark themes, so a meter always reads as its own subscription. There are no remaining
-allowance tracks. A single active subscription owns the entire colored ring.
-This is a comparison of quota percentages, not raw token totals or a combined quota;
-different subscriptions and windows have different allowances. Numeric percentages
-remain unchanged. A reset to zero returns the ring to the remaining active provider.
-If both are idle, the ring is neutral and both show 0%; unknown usage shows a dash.
+The bar shows one small vertical bar per consuming subscription, followed by
+color-matched percentages, without a text title. Each bar is its own quota: it fills
+from the bottom in proportion to that provider's displayed primary window, so 38% Codex
+and 56% Claude are two independently filled columns, never a shared total. Provider
+color is the one thing here that does not follow your Material You palette, and the
+fills are the exact brand hex in light and dark themes, so a meter always reads as its
+own subscription. Brand-colored *text* darkens on a light surface, because the brand
+hex itself falls under the 4.5:1 contrast floor there. Idle providers show 0%; unknown
+usage shows a dash, and a provider with no usable window drops out of the bar entirely.
 
 Each active provider gets its own upward arrow when at least two percentage points
-over its linear pace, matching the dashboard's pacing label and provider color.
+over its linear pace, matching the column's pacing label and provider color.
 Both can show arrows at once. Unknown reset times and stale data do not produce
-pace warnings. The **Show pacing** setting controls these arrows too.
+pace warnings. The **Show pacing** setting controls these arrows too. Vertical bars
+stack the percentages under the same twin columns, with the arrow trailing the number
+so both providers' digits align.
 
-Click to open the dashboard. Right-click, or use its refresh button, to check usage
-now. Provider tabs use matching colors. Multiple accounts get a native DMS selector;
-the initial selection and ring show the highest primary-window utilization.
-Manual account selections persist through refreshes. Vertical bars show the same
-ring, with percentages and arrows stacked below it.
-The header keeps the update time and dashboard, refresh, and close icons visible
-while scrolling. The dashboard icon is immediately left of refresh; opening it
-closes the usage dialog. Overflow uses the native DMS auto-hiding scrollbar.
+Click to open the popout. Right-click, or use its refresh button, to check usage now.
+
+The popout shows **both providers side by side**, one column each, so comparing them
+costs no clicks and the two subscriptions can never read as one pool. Codex is on the
+left by default; the **Primary provider** setting swaps the columns. Each column carries
+its own plan, clients, limits, week, models, and `open_in_new` dashboard link, and its
+own status: Codex can be disconnected while Claude is fully readable beside it. A filled
+surface appears only for a provider that needs attention, so a fill means a problem
+rather than a section. Multiple accounts for one provider get a native DMS selector in
+that provider's column, opening on its highest-utilization account; manual selections
+persist through refreshes and do not disturb the other column.
+
+Every limit is one row: window, percentage, a track whose fill is the brand color, and a
+notch marking where even consumption would have put you. Under it sit the pace verdict
+and the bare countdown. The percentage is brand-tinted until the window is at least 90%
+consumed, when it turns to the theme's caution color — over pace and nearly out are
+separate signals, and both can be true. Row labels drop their "window" suffix to fit the
+column; the unshortened label and the spelled-out reset time are in the row's tooltip,
+which opens at the cursor rather than at the middle of the row and flips to the other
+side when the popout edge is close. The accessible name carries all of it. The header keeps the update time, refresh, and close visible
+while scrolling, and reports the stalest column's fetch rather than the freshest.
+Overflow uses the native DMS auto-hiding scrollbar.
 
 The dashboard displays actual quota windows returned by each provider, reset times,
 and optional pacing against the elapsed portion of a known fixed-length window.
@@ -53,10 +66,13 @@ without a reset time; the widget does not invent one. Codex Spark quota buckets 
 Anthropic's undocumented Nimbus Quill placeholder are intentionally hidden; real
 model-scoped Claude limits such as Fable remain visible.
 
-The seven-day chart records daily peak primary-window utilization observed by this
-widget. Unsampled days are missing, not zero. It is a quota chart, not a spend chart.
+Each column's seven-day strip records daily peak primary-window utilization observed by
+this widget, today's bar at full brand strength. Unsampled days are missing, not zero.
+It is a quota chart, not a spend chart, and each day's date and peak are in its tooltip.
 
-**Models this week** is a separate block, one bar per model, for each provider. It totals
+**Models this week** closes each column with every model that ran, busiest first, one bar
+per model, scaled against that provider's busiest. Release-date suffixes are trimmed from
+model ids to fit; the tooltip carries the full name. It totals
 the tokens each model processed in local sessions over the last seven days — input, output,
 and cache reads — and scales every bar against the busiest model. This is the one part of
 the widget that is *not* account-wide: it counts what ran in session logs on this machine,
@@ -91,7 +107,7 @@ responses back off for at least five minutes. A check that starts while another 
 still running reports the last stored result rather than queueing behind it.
 
 Failures retain saved usage for at most 24 hours, with a warning, original update
-time, and dimmed rings. Older data is hidden. Failed or missing connections never
+time, and dimmed fills. Older data is hidden. Failed or missing connections never
 appear as zero usage.
 
 An account is identified by its provider account id or token subject, falling back
@@ -131,17 +147,21 @@ python3 get-ai-usage --offline        # no network requests
 python3 get-ai-usage --demo           # sample data; no credential reads
 python3 -m unittest discover -s tests -v
 node --test tests/test_usage.cjs       # presentation logic; Node needed for tests only
-python3 scripts/preview.py            # render fifteen native QML states offscreen
+python3 scripts/preview.py            # render fourteen native QML states offscreen
 ```
 
 Optional `--config /path/to/settings.json` accepts plugin settings, for example
 `{"refreshInterval": 5}`. Otherwise settings come from DMS's
 `plugin_settings.json` under `aiUsage`.
 
-`scripts/preview.py` renders fifteen QML states offscreen against installed DMS
-components: both providers, multiple-account selection and refresh, missing/stale usage,
-narrow layout, light theme, horizontal/vertical bar rings, single-provider usage, reset
-transitions, and two independent pace arrows. It runs entirely on `--demo` data in an
+`scripts/preview.py` renders fourteen QML states offscreen against installed DMS
+components: both columns side by side, per-column dashboard links, per-provider
+account selection and refresh, one provider missing while the other is healthy, stale
+usage, a clamped narrow layout, light theme, horizontal/vertical pill bars,
+single-provider usage, reset transitions, and two independent pace arrows. Each
+dashboard state is grabbed at its own natural height, so the screenshots also measure
+the panel. Tooltip size and placement are asserted from a stubbed pointer instead:
+a popup renders in the window overlay, which no screenshot of the panel can reach. It runs entirely on `--demo` data in an
 isolated config, and its output under `screenshots/` is an untracked test artifact.
 Set `DMS_QML_ROOT` if DMS is installed somewhere other than `/usr/share/quickshell/dms`.
 

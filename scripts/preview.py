@@ -16,7 +16,7 @@ with tempfile.TemporaryDirectory(prefix="dms-ai-preview-") as staging:
     staging = Path(staging)
     rendered = staging / "rendered"
     rendered.mkdir()
-    expected = {name + ".png" for name in ("codex", "claude", "accounts", "missing", "stale", "narrow", "light", "bar", "vertical", "bar_codex", "bar_claude", "bar_over", "bar_idle", "bar_missing", "bar_light")}
+    expected = {name + ".png" for name in ("dashboard", "accounts", "missing", "stale", "narrow", "light", "bar", "vertical", "bar_codex", "bar_claude", "bar_over", "bar_idle", "bar_missing", "bar_light")}
     for path in dms.iterdir():
         if path.is_dir():
             (staging / path.name).symlink_to(path)

@@ -11,17 +11,13 @@ PluginComponent {
     property var snapshot: ({accounts: []})
     property string lastPayload: ""
     property string collectorError: ""
-    property string selectedProvider: pluginData.defaultProvider === "claude" ? "claude" : "codex"
+    readonly property string primaryProvider: pluginData.defaultProvider === "claude" ? "claude" : "codex"
     property real now: Date.now()
     property bool forceRequest: false
-    property bool queuedManualRefresh: false
     readonly property string scriptPath: decodeURIComponent(Qt.resolvedUrl("get-ai-usage").toString().replace(/^file:\/\//, ""))
 
     function refresh(force) {
-        if (collector.running) {
-            if (force) queuedManualRefresh = true;
-            return;
-        }
+        if (collector.running) return;
         forceRequest = force === true;
         collector.running = true;
     }
@@ -59,10 +55,6 @@ PluginComponent {
         onExited: (exitCode, exitStatus) => {
             if (exitCode !== 0)
                 root.collectorError = "The usage collector could not finish. Run get-ai-usage in a terminal to check the installation.";
-            if (root.queuedManualRefresh) {
-                root.queuedManualRefresh = false;
-                Qt.callLater(() => root.refresh(true));
-            }
         }
     }
     Timer {
@@ -96,15 +88,14 @@ PluginComponent {
     popoutContent: Component {
         UsageDashboard {
             snapshot: root.snapshot
-            provider: root.selectedProvider
-            loading: collector.running && (root.forceRequest || root.snapshot.accounts.length === 0)
+            primaryProvider: root.primaryProvider
+            loading: collector.running
             collectorError: root.collectorError
             now: root.now
             showPacing: root.pluginData.showPacing !== false
             maxBodyHeight: root.parentScreen ? Math.max(220, root.parentScreen.height - 160) : 1000
             onRefreshRequested: root.refresh(true)
             onDashboardRequested: url => Qt.openUrlExternally(url)
-            onProviderSelected: provider => root.selectedProvider = provider
         }
     }
 }

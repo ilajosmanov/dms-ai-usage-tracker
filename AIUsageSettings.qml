@@ -22,7 +22,8 @@ PluginSettings {
     }
     SelectionSetting {
         settingKey: "defaultProvider"
-        label: "Default provider"
+        label: "Primary provider"
+        description: "Both providers are always shown; this one takes the left column."
         defaultValue: "codex"
         options: Usage.providerOptions()
     }
