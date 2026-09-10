@@ -14,10 +14,16 @@ PluginComponent {
     readonly property string primaryProvider: pluginData.defaultProvider === "claude" ? "claude" : "codex"
     property real now: Date.now()
     property bool forceRequest: false
+    property bool queuedForce: false
     readonly property string scriptPath: decodeURIComponent(Qt.resolvedUrl("get-ai-usage").toString().replace(/^file:\/\//, ""))
 
     function refresh(force) {
-        if (collector.running) return;
+        if (collector.running) {
+            // A click that lands during the 30-second poll used to vanish. Hold it
+            // instead: the button has to mean something every time it is pressed.
+            queuedForce = queuedForce || force === true;
+            return;
+        }
         forceRequest = force === true;
         collector.running = true;
     }
@@ -28,6 +34,12 @@ PluginComponent {
         id: settingsRefresh
         interval: 750
         onTriggered: root.refresh(false)
+    }
+    Timer {
+        // Runs the held click once the process has actually let go of `running`.
+        id: queuedRefresh
+        interval: 0
+        onTriggered: root.refresh(true)
     }
     Process {
         id: collector
@@ -55,6 +67,13 @@ PluginComponent {
         onExited: (exitCode, exitStatus) => {
             if (exitCode !== 0)
                 root.collectorError = "The usage collector could not finish. Run get-ai-usage in a terminal to check the installation.";
+            // One click forces one check; leaving the flag up would have made every
+            // background poll a forced one.
+            root.forceRequest = false;
+            if (root.queuedForce) {
+                root.queuedForce = false;
+                queuedRefresh.restart();
+            }
         }
     }
     Timer {

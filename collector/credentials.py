@@ -9,7 +9,7 @@ from contextlib import closing
 from pathlib import Path
 
 from .jsonfile import read_json
-from .stores import roots
+from .stores import roots, claude_profile
 
 
 def header_safe(value):
@@ -29,7 +29,7 @@ def claims(token):
 def discover(config, home=None):
     home = Path(home) if home else Path.home()
     found = []
-    def add(provider, source, data, account="", plan=""):
+    def add(provider, source, data, account="", plan="", **metadata):
         if not isinstance(data, dict):
             return
         secret = data.get("access_token") or data.get("accessToken") or data.get("access") or data.get("key")
@@ -56,15 +56,24 @@ def discover(config, home=None):
             expires = 0
         found.append({"id": provider + "-" + uid, "provider": provider, "source": source,
                       "secret": secret, "account": account, "plan": plan,
-                      "expires": expires})
+                      "expires": expires, **metadata})
 
     store = roots(home)
     codex = read_json(Path(config.get("codexAuthFile") or store["codex"] / "auth.json").expanduser())
     add("codex", "Codex", codex.get("tokens", {}))
-    claude = read_json(Path(config.get("claudeAuthFile") or store["claude"] / ".credentials.json").expanduser()).get("claudeAiOauth", {})
+    profile = claude_profile(config, home)
+    claude = read_json(profile["authFile"]).get("claudeAiOauth", {})
     if not isinstance(claude, dict):
         claude = {}
-    add("claude", "Claude Code", claude, plan=str(claude.get("rateLimitTier") or claude.get("subscriptionType") or "Claude subscription").replace("_", " "))
+    identity = read_json(profile["configFile"]).get("oauthAccount") or {}
+    if not isinstance(identity, dict):
+        identity = {}
+    account = str(identity.get("accountUuid") or "")
+    organization = str(identity.get("organizationUuid") or "")
+    add("claude", "Claude Code", claude,
+        account=account + ":" + organization if account else "",
+        plan=str(claude.get("rateLimitTier") or claude.get("subscriptionType") or "Claude subscription").replace("_", " "),
+        **profile)
     stores = [("pi", store["pi"] / "auth.json"),
               ("OMP", store["omp"] / "auth.json"),
               ("opencode", store["opencode"] / "auth.json")]

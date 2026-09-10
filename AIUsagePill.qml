@@ -25,7 +25,7 @@ Item {
         return name + ": " + Usage.percent(primary) + " used · " + primary.label + (root.failed || account.status === "stale" ? " (saved usage)" : "");
     }
 
-    // Twin verticals: one 4px column per consuming provider, filled from the
+    // Twin verticals: one 4px column per provider with known usage, filled from the
     // bottom. Height is the shape of the quota, so the pill reads before the
     // digits do.
     Row {

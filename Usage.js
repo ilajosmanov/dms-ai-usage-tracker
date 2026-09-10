@@ -57,9 +57,7 @@ function primaryUsage(account) {
 }
 
 function barAccounts(codex, claude) {
-    var known = [codex, claude].filter(function(a) { return primaryUsage(a) !== null; });
-    var active = known.filter(function(a) { return primaryUsage(a) > 0; });
-    return active.length ? active : known;
+    return [codex, claude].filter(function(a) { return primaryUsage(a) !== null; });
 }
 
 
@@ -141,12 +139,60 @@ function age(updatedAt, now) {
     return "Updated " + Math.floor(minutes / 60) + "h ago";
 }
 
-// One header, two providers: report the oldest fetch, so the age never claims
-// to be fresher than the stalest column on screen.
+// One header, two providers, and they can be hours apart: a provider serving
+// saved usage would otherwise pin this clock and make a refresh that did work
+// look like one that did nothing. So the header reports the live columns, and a
+// saved column states its own age next to its own numbers instead.
 function latestUpdate(snapshot) {
-    var stamps = (snapshot.accounts || []).map(function(a) { return a.updatedAt; })
+    var accounts = (snapshot.accounts || []);
+    var live = accounts.filter(function(a) { return a.status === "ok"; });
+    var stamps = (live.length ? live : accounts).map(function(a) { return a.updatedAt; })
         .filter(function(t) { return typeof t === "number" && isFinite(t); });
-    return stamps.length ? Math.min.apply(null, stamps) : null;
+    return stamps.length ? Math.max.apply(null, stamps) : null;
+}
+
+// The age the header no longer carries for a saved column.
+function savedAge(updatedAt, now) {
+    if (!updatedAt)
+        return "";
+    var minutes = Math.max(0, Math.floor((now / 1000 - updatedAt) / 60));
+    if (minutes < 1)
+        return "under 1m old";
+    if (minutes < 60)
+        return minutes + "m old";
+    return Math.floor(minutes / 60) + "h old";
+}
+
+// A reading the widget did not take itself. The client that took it is named,
+// because "41%" and "41% as Codex last measured it" are different claims and only
+// the second one is true. The age travels with it: the header clock speaks for our
+// own checks, and this is not one of them.
+function originNote(account, now) {
+    if (!account || !account.origin)
+        return "";
+    var when = savedAge(account.updatedAt, now);
+    return "via " + account.origin + (when ? " · " + when : "");
+}
+
+// The header clock speaks for the live columns only, so a column showing an older
+// reading dates itself — and says whose reading it is, when it is not ours.
+function savedTitle(account, now) {
+    var origin = account && account.origin;
+    var when = savedAge(account && account.updatedAt, now);
+    return (origin ? "Showing " + origin + "'s last check" : "Showing saved usage")
+        + (when ? " · " + when : "");
+}
+
+// Report the collector's retry deadline without guessing how the provider scopes it.
+function retryNote(retryAt, now) {
+    if (typeof retryAt !== "number" || !isFinite(retryAt) || retryAt <= 0)
+        return "";
+    var minutes = Math.ceil((retryAt - now / 1000) / 60);
+    if (minutes <= 0)
+        return "";
+    var wait = minutes < 60 ? minutes + "m"
+        : Math.floor(minutes / 60) + "h" + (minutes % 60 ? " " + minutes % 60 + "m" : "");
+    return "Next check in " + wait + ".";
 }
 
 // The collector writes the same note on every account; the panel shows it once.

@@ -1,7 +1,9 @@
 # AI Usage for Dank Material Shell
 
 Codex and Claude subscription usage in one native, theme-aware DankBar widget.
-Requires Dank Material Shell / Quickshell and Python 3.10+. Tested with DMS 1.6.
+Requires Dank Material Shell / Quickshell and Python 3.10+. Claude collection also
+requires a recent `claude` executable on PATH (verified with Claude Code 2.1.263).
+Tested with DMS 1.6.
 
 ## Install
 
@@ -26,7 +28,8 @@ and 56% Claude are two independently filled columns, never a shared total. Provi
 color is the one thing here that does not follow your Material You palette, and the
 fills are the exact brand hex in light and dark themes, so a meter always reads as its
 own subscription. Brand-colored *text* darkens on a light surface, because the brand
-hex itself falls under the 4.5:1 contrast floor there. Idle providers show 0%; unknown
+hex itself falls under the 4.5:1 contrast floor there. Idle providers keep their empty
+bar and 0% label, even when the other provider is active; unknown
 usage shows a dash, and a provider with no usable window drops out of the bar entirely.
 
 Each active provider gets its own upward arrow when at least two percentage points
@@ -56,7 +59,9 @@ separate signals, and both can be true. Row labels drop their "window" suffix to
 column; the unshortened label and the spelled-out reset time are in the row's tooltip,
 which opens at the cursor rather than at the middle of the row and flips to the other
 side when the popout edge is close. The accessible name carries all of it. The header keeps the update time, refresh, and close visible
-while scrolling, and reports the stalest column's fetch rather than the freshest.
+while scrolling, and reports the newest column that is actually live; a column
+serving saved usage dates itself instead, so one backed-off provider cannot make a
+refresh that did work read as one that did nothing.
 Overflow uses the native DMS auto-hiding scrollbar.
 
 The dashboard displays actual quota windows returned by each provider, reset times,
@@ -91,27 +96,71 @@ account identities and tries the freshest available login. It reads, without mod
 - `$XDG_DATA_HOME/opencode/auth.json` (default `~/.local/share/opencode/auth.json`), for Codex OAuth only
 
 Nonstandard Codex/Claude credential paths and the OMP database can be selected in
-plugin settings. Codex keyring-only storage is not read. API keys are not treated
-as subscription tokens. The plugin never uses refresh tokens; reconnect an expired
-session in its source client.
+plugin settings. For Claude, select the native profile's `.credentials.json`; its
+`.claude.json` must be in the same profile directory when using a custom location.
+The default profile uses `~/.claude/.credentials.json` and `~/.claude.json`.
+`CLAUDE_CONFIG_DIR` is honored. Arbitrarily renamed credential files cannot be used
+by the native Claude command. Codex keyring-only storage is not read. API keys are
+not treated as subscription tokens.
+
+## Where the numbers come from
+
+Codex uses account-wide provider usage, reusing newer `rate_limits` snapshots from
+its local session logs between API checks.
+
+Claude uses **Claude Code's native `get_usage` control request**. A short background
+process starts in a temporary working directory, initializes the JSON protocol,
+requests subscription usage, and exits. It sends no model prompt. Claude handles
+its own authentication, including renewal of an expired login, so you do not need
+to keep an interactive Claude window open. The plugin does not implement or consume
+Claude's refresh-token exchange itself.
+
+The subprocess runs in safe mode with tools and MCP disabled, session persistence
+disabled, and telemetry, error reporting, and automatic updates disabled. It skips the usage behavior scan,
+limits captured output to 4 MB, and stops the process group after completion or a
+25-second deadline. One collector lock prevents overlapping checks across bars.
+
+The native response may contain cached fallback data after a failed provider check.
+The widget therefore verifies it against `cachedUsageUtilization` in Claude's config,
+including its account UUID, capture timestamp, and normalized quota windows. A cached
+response is never dated as a new check. Fresh account-bound local readings avoid
+starting a process at all. Claude account/organization identity controls cache and
+history ownership; switching accounts does not reuse the previous account's quota.
+Older captures without account identity cannot be verified by this path.
+
+The native control interface is experimental. An unsupported CLI version, missing
+executable, failed renewal, timeout, or unverified reading produces an actionable
+message and retains the last verified reading when available. Update Claude Code
+if it cannot answer the structured usage request. The comparison and local proof
+are recorded in [the research notes](docs/claude-usage-research.md).
 
 ## Refresh and privacy
 
-Local credentials are checked every thirty seconds; the cache is rewritten only when
-something actually changed. A new or changed login bypasses cached sign-in errors
-immediately on the next check. Normal API polling follows the configured 2–15 minute
-interval, shared across bars and screens. After a failure the next attempt is at
-least two minutes out regardless of that setting. Manual refresh bypasses the
-interval with a five-second cooldown. Provider rate limits still apply: HTTP 429
-responses back off for at least five minutes. A check that starts while another is
-still running reports the last stored result rather than queueing behind it.
+Local credentials and usage are checked every thirty seconds. Normal collection
+follows the configured 2–30 minute interval for Codex and **5–30 minutes for Claude**.
+Claude's minimum matches the cadence at which it persists its usage cache. Fresh
+local data can update either column between collection attempts. The cache is
+rewritten only when something changed.
 
-Failures retain saved usage for at most 24 hours, with a warning, original update
-time, and dimmed fills. Older data is hidden. Failed or missing connections never
-appear as zero usage.
+Manual refresh bypasses the normal interval with a five-second cooldown. A click
+during collection is held until the current process finishes. Provider retry waits
+are retained and cannot be shortened by manual refresh. Direct HTTP responses honor
+numeric or HTTP-date `Retry-After` values, including waits longer than an hour.
+Claude's control response does not expose every upstream error or retry header;
+when fresh data cannot be verified, retry after at least five minutes or the selected
+interval, whichever is longer. This is reported as an unverified refresh, without
+claiming the failure was necessarily HTTP 429.
 
-An account is identified by its provider account id or token subject, falling back
-to the credential store it came from, so a rotated token keeps its recorded history.
+Failures retain saved usage for at most 24 hours, with its original capture time,
+stale warning, and dimmed fills. Older data is hidden. Missing readings never appear
+as zero usage. A newer verified client capture can still update the column while a
+retry wait is active; reading a file does not clear that wait.
+
+The plugin reads client credentials and config. The native Claude subprocess may
+renew credentials and update its own config/cache as part of collection. The plugin
+never copies Claude refresh tokens to a separate credential store. Account IDs are
+hashed for widget/cache identity. Credentials and raw subprocess diagnostics are
+never published to QML.
 
 Session logs are read incrementally. A file already scanned is re-read only from the byte
 where the previous scan stopped, and Codex, which reports a running session total, is read
@@ -132,11 +181,12 @@ Raw credentials, email addresses, account IDs, prompts, and messages are not cac
 or returned to QML. Credentials travel in HTTPS headers, not process arguments, and a
 token or account id that could not be sent verbatim in a header is discarded rather
 than sent. Provider-supplied text renders as plain text, never as markup.
-No telemetry, model requests, token refreshes, or credential-store writes occur.
-Redirects are rejected.
-
-The only network destinations are `chatgpt.com/backend-api/wham/usage` and
-`api.anthropic.com/api/oauth/usage`.
+The collector sends no telemetry or model requests. Its direct HTTP transport
+rejects redirects and contacts `chatgpt.com/backend-api/wham/usage` for Codex.
+Claude Code performs its own authentication and usage traffic; the plugin disables
+telemetry, error reporting, and automatic updates for these background checks.
+It does not enable Claude's broad essential-traffic restriction, which also blocks
+the usage endpoint and causes Claude to return saved data.
 
 ## Development
 
@@ -152,13 +202,15 @@ python3 scripts/preview.py            # render fourteen native QML states offscr
 
 Optional `--config /path/to/settings.json` accepts plugin settings, for example
 `{"refreshInterval": 5}`. Otherwise settings come from DMS's
-`plugin_settings.json` under `aiUsage`.
+`plugin_settings.json` under `aiUsage`. The interval bounds API polling only; a client
+that is running keeps the columns current between those checks at no cost, so a longer
+interval is usually the better setting.
 
 `scripts/preview.py` renders fourteen QML states offscreen against installed DMS
 components: both columns side by side, per-column dashboard links, per-provider
 account selection and refresh, one provider missing while the other is healthy, stale
 usage, a clamped narrow layout, light theme, horizontal/vertical pill bars,
-single-provider usage, reset transitions, and two independent pace arrows. Each
+zero-usage bars, reset transitions, and two independent pace arrows. Each
 dashboard state is grabbed at its own natural height, so the screenshots also measure
 the panel. Tooltip size and placement are asserted from a stubbed pointer instead:
 a popup renders in the window overlay, which no screenshot of the panel can reach. It runs entirely on `--demo` data in an

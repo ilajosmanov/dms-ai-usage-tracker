@@ -23,6 +23,12 @@ Column {
     readonly property var windows: account.windows || []
     readonly property var models: Usage.modelBars(account)
     readonly property bool stale: degraded || account.status === "stale"
+    readonly property string originNote: Usage.originNote(account, now)
+    // With a single client, the label and the attribution are the same words. The
+    // attribution carries the age too, so it is the one worth a line.
+    readonly property bool labelRepeatsOrigin: originNote !== ""
+        && Usage.clientLabel(account.label) === account.origin
+    readonly property string retryNote: Usage.retryNote(account.retryAt, now)
     readonly property color accent: Usage.accent(provider)
     readonly property color accentText: Usage.accentText(provider, Theme.isLightMode)
     readonly property color cautionColor: Theme.isLightMode ? Qt.darker(Theme.warning, 1.8) : Theme.warning
@@ -94,11 +100,26 @@ Column {
         textFormat: Text.PlainText
         text: Usage.clientLabel(root.account.label) || (root.account.status === "loading" ? "Finding accounts…" : "")
         // The selector already names the account, so don't print it twice.
-        visible: text !== "" && root.accounts.length < 2
+        visible: text !== "" && root.accounts.length < 2 && !root.labelRepeatsOrigin
         color: Theme.surfaceVariantText
         font.pixelSize: Math.round(Theme.fontScale * 11)
         wrapMode: Text.Wrap
         maximumLineCount: 2
+        elide: Text.ElideRight
+    }
+
+    // A number read from a client's own state is still that client's reading, and
+    // the panel says so rather than passing it off as a check of its own.
+    StyledText {
+        objectName: "originNote-" + root.provider
+        width: parent.width
+        textFormat: Text.PlainText
+        text: root.originNote
+        // When the column is not live the status card already dates and attributes
+        // the reading; saying it twice in 185px is worse than saying it once.
+        visible: text !== "" && root.account.status === "ok"
+        color: Theme.surfaceVariantText
+        font.pixelSize: Math.round(Theme.fontScale * 11)
         elide: Text.ElideRight
     }
 
@@ -132,8 +153,9 @@ Column {
             x: 10; y: 10; width: parent.width - 20
             spacing: 3
             StyledText {
+                objectName: "statusTitle-" + root.provider
                 width: parent.width
-                text: root.account.status === "stale" ? "Showing saved usage"
+                text: root.account.status === "stale" ? Usage.savedTitle(root.account, root.now)
                     : root.account.status === "missing" ? "Not connected"
                     : root.account.status === "auth" ? "Sign-in needed"
                     : root.account.status === "loading" ? "Checking…"
@@ -147,6 +169,16 @@ Column {
                 width: parent.width
                 textFormat: Text.PlainText
                 text: root.account.message || ""
+                visible: text !== ""
+                color: Theme.surfaceVariantText
+                font.pixelSize: Math.round(Theme.fontScale * 11)
+                wrapMode: Text.Wrap
+            }
+            StyledText {
+                objectName: "retryNote-" + root.provider
+                width: parent.width
+                textFormat: Text.PlainText
+                text: root.retryNote
                 visible: text !== ""
                 color: Theme.surfaceVariantText
                 font.pixelSize: Math.round(Theme.fontScale * 11)

@@ -48,11 +48,11 @@ test('model bars scale against the busiest model and drop what was not observed'
     assert.equal(usage.modelBars(null).length, 0);
 });
 
-test('only the consuming provider is metered, and idle ones drop out', () => {
+test('providers with known usage keep their meters even at zero', () => {
     for (const provider of ['codex', 'claude']) {
         const codex = account('codex', provider === 'codex' ? 37 : 0);
         const claude = account('claude', provider === 'claude' ? 56 : 0);
-        assert.equal(usage.barAccounts(codex, claude).map(a => a.provider).join(','), provider);
+        assert.equal(usage.barAccounts(codex, claude).map(a => a.provider).join(','), 'codex,claude');
     }
     assert.equal(usage.barAccounts(account('codex', 60), account('claude', 20)).length, 2,
         'two consumers get two bars');
@@ -107,12 +107,51 @@ test('a near-limit window is called out separately from an over-pace one', () =>
         'the two signals are independent, and can both be true');
 });
 
-test('the header age reports the stalest column, never the freshest', () => {
-    assert.equal(usage.latestUpdate({accounts: [{updatedAt: 500}, {updatedAt: 200}]}), 200);
+test('a backed-off column cannot freeze the header clock for the live one', () => {
+    const live = {status: 'ok', updatedAt: 500};
+    const saved = {status: 'stale', updatedAt: 200};
+    assert.equal(usage.latestUpdate({accounts: [live, saved]}), 500,
+        'a refresh that did update Codex must not still read as 5m ago because Claude is rate limited');
+    assert.equal(usage.latestUpdate({accounts: [saved, {status: 'stale', updatedAt: 400}]}), 400,
+        'with nothing live the header falls back to the newest saved check');
     assert.equal(usage.latestUpdate({accounts: [{updatedAt: 500}, {}]}), 500);
     assert.equal(usage.latestUpdate({accounts: []}), null);
     assert.equal(usage.latestUpdate({}), null);
     assert.equal(usage.age(null, now), 'Never synced');
+});
+
+test('a saved column dates itself, since the header no longer does it for them', () => {
+    assert.equal(usage.savedAge(now / 1000 - 900, now), '15m old');
+    assert.equal(usage.savedAge(now / 1000 - 20, now), 'under 1m old');
+    assert.equal(usage.savedAge(now / 1000 - 7500, now), '2h old');
+    assert.equal(usage.savedAge(null, now), '');
+});
+
+test('a reading taken by a client is attributed to that client, never to us', () => {
+    assert.equal(usage.originNote({origin: 'Codex', updatedAt: now / 1000 - 120}, now), 'via Codex · 2m old');
+    assert.equal(usage.originNote({origin: 'Claude Code', updatedAt: now / 1000 - 20}, now),
+        'via Claude Code · under 1m old');
+    assert.equal(usage.originNote({origin: '', updatedAt: now / 1000}, now), '',
+        'a check we made ourselves needs no attribution');
+    assert.equal(usage.originNote(null, now), '');
+    assert.equal(usage.originNote({origin: 'Codex'}, now), 'via Codex', 'an undated reading is still attributed');
+});
+
+test('a column showing an older reading dates it and says whose it is', () => {
+    assert.equal(usage.savedTitle({origin: 'Codex', updatedAt: now / 1000 - 300}, now),
+        "Showing Codex's last check · 5m old");
+    assert.equal(usage.savedTitle({updatedAt: now / 1000 - 2220}, now), 'Showing saved usage · 37m old',
+        'our own saved check is not attributed to a client');
+    assert.equal(usage.savedTitle({}, now), 'Showing saved usage');
+});
+
+test('a provider backoff reports its deadline without guessing authentication recovery', () => {
+    assert.equal(usage.retryNote(now / 1000 + 3300, now), 'Next check in 55m.');
+    assert.equal(usage.retryNote(now / 1000 + 3900, now), 'Next check in 1h 5m.');
+    assert.equal(usage.retryNote(now / 1000 + 3600, now), 'Next check in 1h.');
+    assert.equal(usage.retryNote(now / 1000 - 10, now), '', 'an expired backoff is not a wait');
+    assert.equal(usage.retryNote(0, now), '');
+    assert.equal(usage.retryNote(undefined, now), '');
 });
 
 test('row countdowns drop the prefix the header no longer repeats', () => {

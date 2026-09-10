@@ -22,6 +22,10 @@ def snapshot():
         accounts.append({"id": provider + "-demo", "provider": provider, "name": name, "label": " + ".join(sources),
                          "plan": plan, "sources": sources, "windows": windows,
                          "models": weekly,
-                         "status": "ok", "updatedAt": now, "message": "", "note": "Account-wide usage across connected clients.",
+                         "status": "ok", "updatedAt": now - (95 if provider == "claude" else 0),
+                         # One column read from its client's own state, one checked directly,
+                         # so the preview always renders both attributions.
+                         "origin": "Claude Code" if provider == "claude" else "",
+                         "message": "", "note": "Account-wide usage across connected clients.",
                          "history": [{"date": str(today - timedelta(days=6-i)), "value": v, "window": "primary"} for i, v in enumerate([32, 57, 44, 76, 23, 49, used])]})
     return {"version": 1, "demo": True, "checkedAt": now, "accounts": accounts}

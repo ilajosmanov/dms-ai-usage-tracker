@@ -193,10 +193,21 @@ ShellRoot {
                     if (String(codexBar.color) === String(claudeBar.color))
                         throw new Error("Bars keep their brand colors");
                 }
-                if (preview.stage === 8 && (pill.meters.length !== 1 || pill.meters[0].provider !== "codex"))
-                    throw new Error("Only Codex should be displayed");
-                if (preview.stage === 9 && (pill.meters.length !== 1 || pill.meters[0].provider !== "claude"))
-                    throw new Error("Only Claude should be displayed after Codex resets");
+                if (preview.stage === 7 || preview.stage === 8 || preview.stage === 9 || preview.stage === 11) {
+                    if (pill.meters.length !== 2)
+                        throw new Error("Both providers must remain in the panel when usage resets to zero");
+                    pill.meters.forEach(function(account) {
+                        if (Usage.primaryUsage(account) !== 0) return;
+                        var track = preview.findNamed(pill, "usageBar-" + account.provider);
+                        var fill = preview.findNamed(pill, "usageBarFill-" + account.provider);
+                        var label = preview.findNamed(pill, "barPercent-" + account.provider);
+                        if (!track || !track.visible || track.width <= 0 || track.height <= 0
+                            || !label || !label.visible || label.text !== "0%")
+                            throw new Error("An idle provider must keep its visible track and 0% label");
+                        if (!fill || fill.height !== 0)
+                            throw new Error("Zero usage must leave the track empty");
+                    });
+                }
                 if (preview.stage === 10 || preview.stage === 13) {
                     if (pill.overPaceCount !== 2)
                         throw new Error("Both providers must have independent pace arrows");
@@ -285,9 +296,13 @@ ShellRoot {
                     data.accounts[0].message = "Sign in with ChatGPT in your coding client. New logins are detected automatically.";
                 } else if (preview.stage === 3) {
                     data.accounts[1].status = "stale";
-                    data.accounts[1].message = "Could not reach the provider. Check your connection.";
+                    data.accounts[1].message = "Provider rate limited this check.";
+                    // The worst case for this card: a saved column that a manual
+                    // refresh cannot move for the next hour.
+                    data.accounts[1].retryAt = Date.now() / 1000 + 3300;
+                    data.accounts[1].updatedAt = Date.now() / 1000 - 900;
                 }
-                if (preview.stage === 8) data.accounts[1].windows[0].used = 0;
+                if (preview.stage === 7 || preview.stage === 8) data.accounts[1].windows[0].used = 0;
                 if (preview.stage === 9) data.accounts[0].windows[0].used = 0;
                 if (preview.stage === 10 || preview.stage === 13) {
                     data.accounts.forEach(function(a) {

@@ -12,7 +12,7 @@ import time
 from datetime import datetime, timedelta
 from pathlib import Path
 
-from . import activity
+from . import activity, local, claude
 from .credentials import discover
 from .jsonfile import atomic_json, private_dir, read_json
 from .providers import UsageError, fetch, hidden, number
@@ -20,6 +20,9 @@ from .providers import UsageError, fetch, hidden, number
 PROVIDERS = {"codex": "Codex", "claude": "Claude"}
 # Scheduling state the widget never reads; kept in the private cache, not published.
 INTERNAL = ("credentialFingerprint", "lastAttempt", "nextAttempt", "retryNotBefore")
+# Past this, a reading is history rather than usage, whoever took it. A day-old
+# percentage against a five-hour window is not a smaller truth, it is a wrong one.
+MAX_AGE = 86400
 
 
 def fingerprint_key(directory):
@@ -42,30 +45,104 @@ def fingerprint_key(directory):
 
 
 def public(account):
-    """The widget only ever sees usage metadata; refresh bookkeeping stays on disk."""
-    return {k: v for k, v in account.items() if k not in INTERNAL}
+    """The widget only ever sees usage metadata; refresh bookkeeping stays on disk.
+
+    A cache written by an earlier version is missing whatever has been added since,
+    so every path that serves one fills the gaps from `base` before publishing.
+
+    The one exception is a provider backoff. It is the only wait a manual refresh
+    cannot shorten, so the panel is given the moment it lifts — otherwise every
+    click looks like a broken button. Published from `retryNotBefore` rather than
+    stored twice, so it is right for caches written before it existed.
+    """
+    return {**{k: v for k, v in account.items() if k not in INTERNAL},
+            "retryAt": account.get("retryNotBefore") or 0}
 
 
-def refresh_group(group, cached, now, offline=False, force=False, interval=120, key=b""):
+def taken_at(account):
+    """When a reading was taken, as a number even when it was never taken at all."""
+    return (account or {}).get("updatedAt") or 0
+
+
+def refresh_group(group, cached, now, offline=False, force=False, interval=120, key=b"", home=None):
     first = group[0]
+    native = first["provider"] == "claude"
+    if native:
+        interval = max(claude.MIN_INTERVAL, interval)
+        if cached and (not first.get("account") or now - taken_at(cached) >= MAX_AGE):
+            cached = {**cached, "windows": [], "history": [], "updatedAt": None,
+                      "status": "error", "message": "No recent verified Claude usage is available."}
+        elif cached and cached.get("status") == "ok" and now - taken_at(cached) >= interval:
+            cached = {**cached, "status": "stale", "message": "Claude's last reading is no longer current."}
     # Keyed, so a value written to disk cannot be checked against a guessed token.
     fingerprint = hmac.new(key, json.dumps(sorted(c["secret"] for c in group)).encode(), hashlib.sha256).hexdigest()
     base = {"id": first["id"], "provider": first["provider"], "name": PROVIDERS[first["provider"]],
             "sources": list(dict.fromkeys(c["source"] for c in group)), "windows": [], "history": [],
-            "plan": "", "updatedAt": None, "message": "", "note": "",
+            "plan": "", "updatedAt": None, "message": "", "note": "", "origin": "",
             "credentialFingerprint": fingerprint, "lastAttempt": now}
     changed = cached and cached.get("credentialFingerprint") != fingerprint
+
+    def adopt(reading, status="ok"):
+        """Publish what the client fetched, dated when the client fetched it.
+
+        Reading a file is not a check, so it neither advances the schedule's idea of
+        the last attempt nor clears a provider backoff that is already running. The
+        next check is due an interval after the *reading*, not after this poll: a
+        reading that has not changed then produces a record that has not changed
+        either, and the cache is left alone.
+        """
+        held = cached or {}
+        return record_history({**base, **reading["data"], "status": status,
+                               "origin": reading["origin"], "updatedAt": reading["fetchedAt"],
+                               "lastAttempt": held.get("lastAttempt", 0),
+                               "nextAttempt": reading["fetchedAt"] + interval,
+                               "retryNotBefore": held.get("retryNotBefore", 0),
+                               "message": held.get("message", "") if status != "ok" else "",
+                               "history": held.get("history", [])}, now)
+
+    reading = claude.read(first, now) if native else local.read(first["provider"], base["sources"], home, now)
+    if reading and now - reading["fetchedAt"] >= MAX_AGE:
+        reading = None  # history rather than usage, exactly like an expired cache
+    current = bool(reading) and now - reading["fetchedAt"] < interval
+    # Claude's reader verifies the capture's account identity itself. Codex's local
+    # logs need a previous provider check to establish which account they belong to.
+    # `changed` is deliberately not consulted here — it also fires when a client
+    # rotates its own token, which happens routinely and changes no account at all.
+    confirmed = native or taken_at(cached) > 0
+
+    def newest(against):
+        """Whichever reading is actually the most recent, ours or the client's."""
+        if reading and reading["fetchedAt"] > taken_at(against):
+            return adopt(reading, "ok" if current else "stale")
+        return None
+
+    # Reusing a current client reading avoids a duplicate provider request.
+    # An explicit refresh still initiates collection.
+    if current and confirmed and not force:
+        reused = newest(cached)
+        if reused:
+            return reused
     if cached and not offline:
         hard_backoff = now < cached.get("retryNotBefore", 0)
         cached_result = not changed and now < cached.get("nextAttempt", 0)
         manual_cooldown = now - cached.get("lastAttempt", 0) < 5
         if hard_backoff or (cached_result and (not force or manual_cooldown)):
-            return {**cached, "sources": base["sources"]}
+            # Waiting does not mean showing the older of two readings we already hold.
+            return newest(cached) or {**base, **cached, "sources": base["sources"]}
     error = UsageError("Offline mode. Showing the last successful check.")
     if not offline:
         # Try freshest tokens first. Client-owned refresh tokens are never consumed.
         for credential in sorted(group, key=lambda c: c.get("expires") or 0, reverse=True):
             try:
+                if native:
+                    checked = claude.fetch(credential, interval)
+                    result = adopt(checked)
+                    # Claude may have renewed its credential while fetching. Notice
+                    # that rotation now so the next local poll does not fetch again.
+                    token = claude.current_token(first)
+                    result["credentialFingerprint"] = hmac.new(key, json.dumps([token]).encode(), hashlib.sha256).hexdigest()
+                    result.update(lastAttempt=now, nextAttempt=max(now + 5, checked["fetchedAt"] + interval), retryNotBefore=0)
+                    return result
                 data = fetch(credential)
                 result = {**base, **data, "status": "ok", "updatedAt": now, "nextAttempt": now + interval,
                           "history": (cached or {}).get("history", [])}
@@ -77,12 +154,31 @@ def refresh_group(group, cached, now, offline=False, force=False, interval=120, 
             except (ValueError, TypeError, KeyError, AttributeError):
                 error = UsageError("Provider response format changed. Check for a plugin update.")
                 break
-    retry = {"lastAttempt": now, "credentialFingerprint": fingerprint,
-             "retryNotBefore": now + error.retry_after if error.rate_limited else 0}
-    if cached and cached.get("updatedAt") and now - cached["updatedAt"] < 86400:
-        return {**cached, **retry, "status": "stale", "message": str(error), "nextAttempt": now + error.retry_after,
-                "sources": base["sources"]}
-    return {**base, **retry, "status": error.status, "message": str(error), "nextAttempt": now + error.retry_after}
+    schedule = {"lastAttempt": now, "credentialFingerprint": fingerprint,
+                "nextAttempt": now + error.retry_after,
+                "retryNotBefore": now + error.retry_after if error.rate_limited else 0}
+    if native:
+        # Renewal can succeed while usage retrieval fails. Record the rotated token
+        # even then, otherwise the next poll mistakes it for a new login and retries.
+        schedule["credentialFingerprint"] = hmac.new(key, json.dumps([claude.current_token(first)]).encode(), hashlib.sha256).hexdigest()
+        if not claude.account_matches(first):
+            cached = None
+        # A failed control response can still leave a newer account-bound capture.
+        reading = claude.read(first, time.time())
+        if reading and time.time() - reading["fetchedAt"] >= MAX_AGE:
+            reading = None
+        current = bool(reading) and time.time() - reading["fetchedAt"] < interval
+    if current:
+        # A current client reading is a good column. The check that just failed is
+        # then only a scheduling fact, and not something to warn anyone about.
+        return {**adopt(reading), **schedule}
+    failed = {**schedule, "status": "stale", "message": str(error)}
+    chosen = newest(cached)
+    if chosen:
+        return {**chosen, **failed}
+    if taken_at(cached) and now - taken_at(cached) < MAX_AGE:
+        return {**base, **cached, **failed, "sources": base["sources"]}
+    return {**base, **failed, "status": error.status}
 
 
 def record_history(result, now):
@@ -129,7 +225,8 @@ def finalize(accounts):
             }[provider]
             accounts.append({"id": provider, "provider": provider, "name": name, "label": "Not connected",
                              "status": "missing", "message": message, "windows": [], "history": [],
-                             "sources": [], "updatedAt": None, "plan": "", "note": ""})
+                             "sources": [], "updatedAt": None, "plan": "", "note": "", "origin": "",
+                             "retryAt": 0})
     order = list(PROVIDERS)
     accounts.sort(key=lambda a: order.index(a["provider"]))
     return accounts
@@ -142,15 +239,16 @@ def cached_snapshot(cache_path, now):
         [public(a) for a in stored.values() if isinstance(a, dict) and a.get("provider") in PROVIDERS])}
 
 
-def collect(config, cache_path, offline=False, force=False):
+def collect(config, cache_path, offline=False, force=False, home=None):
     now = time.time()
-    groups = discover(config)
+    groups = discover(config, home)
     cache = read_json(cache_path).get("accounts", {})
     accounts = []
     key = fingerprint_key(cache_path.parent)
-    interval = max(120, min(900, (number(config.get("refreshInterval")) or 2) * 60))
+    interval = max(120, min(1800, (number(config.get("refreshInterval")) or 2) * 60))
     with concurrent.futures.ThreadPoolExecutor(max_workers=4) as pool:
-        futures = [pool.submit(refresh_group, group, cache.get(uid), now, offline, force, interval, key) for uid, group in groups.items()]
+        futures = [pool.submit(refresh_group, group, cache.get(uid), now, offline, force, interval, key, home)
+                   for uid, group in groups.items()]
         for future in futures:
             accounts.append(future.result())
     finalize(accounts)

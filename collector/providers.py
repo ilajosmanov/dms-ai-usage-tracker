@@ -7,6 +7,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from datetime import datetime, timezone
+from email.utils import parsedate_to_datetime
 from pathlib import Path
 
 try:
@@ -56,6 +57,7 @@ def request(url, headers, *, as_json=True):
         text = raw.decode("utf-8")
         return json.loads(text) if as_json else text
     except urllib.error.HTTPError as exc:
+        exc.close()
         if exc.code in (301, 302, 303, 307, 308):
             raise UsageError("Provider redirected the usage request; refusing to follow it.") from None
         if exc.code == 401:
@@ -64,8 +66,12 @@ def request(url, headers, *, as_json=True):
             raise UsageError("Access denied. Check this account's subscription and sign-in.", "auth") from None
         if exc.code == 429:
             retry = exc.headers.get("Retry-After", "300")
-            seconds = int(retry) if retry.isdigit() else 300
-            raise UsageError("Provider rate limited this check. Retrying later.", "error", max(300, min(seconds, 3600)), rate_limited=True) from None
+            try:
+                seconds = int(retry) if retry.isdigit() else parsedate_to_datetime(retry).timestamp() - time.time()
+            except (ValueError, TypeError, OverflowError):
+                seconds = 300
+            # The panel renders the retry deadline separately from the failure.
+            raise UsageError("Provider rate limited this check.", "error", max(300, seconds), rate_limited=True) from None
         raise UsageError(f"Provider returned HTTP {exc.code}.") from None
     except (urllib.error.URLError, TimeoutError, OSError):
         # A local link that is not up yet (resume from suspend, roaming) is not a
@@ -194,9 +200,4 @@ def fetch(credential):
         if credential.get("account"):
             headers["ChatGPT-Account-Id"] = credential["account"]
         return parse_codex(request("https://chatgpt.com/backend-api/wham/usage", headers))
-    if provider == "claude":
-        headers["anthropic-beta"] = "oauth-2025-04-20"
-        result = parse_claude(request("https://api.anthropic.com/api/oauth/usage", headers))
-        result["plan"] = credential.get("plan") or result["plan"]
-        return result
     raise UsageError("Unsupported provider.")

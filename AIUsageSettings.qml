@@ -36,8 +36,8 @@ PluginSettings {
     SliderSetting {
         settingKey: "refreshInterval"
         label: "Refresh interval"
-        description: "Automatic API refresh interval. New logins are checked every thirty seconds. Right-click or press Refresh to check usage now."
-        defaultValue: 2; minimum: 2; maximum: 15; unit: "min"
+        description: "Automatic collection interval; Claude uses at least five minutes. New logins are checked every thirty seconds. Right-click or press Refresh to check usage now."
+        defaultValue: 2; minimum: 2; maximum: 30; unit: "min"
     }
     StringSetting {
         settingKey: "codexAuthFile"
@@ -46,7 +46,7 @@ PluginSettings {
     }
     StringSetting {
         settingKey: "claudeAuthFile"
-        label: "Claude credentials file (optional)"
+        label: "Claude profile credentials (optional)"
         placeholder: "~/.claude/.credentials.json"
     }
     StringSetting {
