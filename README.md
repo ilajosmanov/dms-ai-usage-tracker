@@ -1,11 +1,46 @@
-# AI Usage for Dank Material Shell
+# Subscription Usage Meter
 
-Codex and Claude subscription usage in one native, theme-aware DankBar widget.
-Requires Dank Material Shell / Quickshell and Python 3.10+. Claude collection also
-requires a recent `claude` executable on PATH (verified with Claude Code 2.1.263).
-Tested with DMS 1.6.
+Account-wide Codex and Claude subscription usage in one native, theme-aware DankBar
+widget for [Dank Material Shell](https://danklinux.com).
+
+![Both providers side by side in the popout: plan, quota windows, pacing, daily peak, and models this week](docs/screenshot.png)
+
+The bar carries one small vertical meter per subscription. Click it for a popout that
+puts both providers side by side with the quota windows each one actually reports,
+their reset times, optional pacing, a seven-day peak strip, and the models that ran
+this week.
+
+## Requirements
+
+| | |
+| --- | --- |
+| Dank Material Shell | 1.6 or newer |
+| Python | 3.10 or newer, standard library only |
+| Codex usage | an existing Codex, pi, OMP, or opencode login |
+| Claude usage | a recent `claude` executable on `PATH` (verified with Claude Code 2.1.263) |
+
+Nothing is installed beyond the plugin itself. The collector reads the logins your
+clients already wrote and never asks you to paste a token.
 
 ## Install
+
+### From the plugin registry
+
+In DMS: **Settings → Plugins**, find **Subscription Usage Meter** in the registry,
+install it, then add the widget under **Settings → DankBar → Widgets**.
+
+### From git
+
+```sh
+mkdir -p ~/.config/DankMaterialShell/plugins
+git clone https://github.com/ilajosmanov/dms-ai-usage-tracker \
+  ~/.config/DankMaterialShell/plugins/aiUsage
+dms restart
+```
+
+Then enable it under **Settings → Plugins** and add the widget to a bar.
+
+### From a checkout, for development
 
 ```sh
 python3 scripts/install.py
@@ -16,8 +51,11 @@ and adds it to the first enabled bar. Existing settings are preserved and backed
 up before modification. Keep this checkout in place. Use `--no-bar` to place the
 widget yourself under DMS Settings → DankBar → Widgets.
 
-To uninstall, remove the widget from the bar, disable the plugin, and unlink the
-`aiUsage` symlink. The checkout and cached usage remain available.
+## Uninstall
+
+Remove the widget from the bar, disable the plugin under Settings → Plugins, and
+delete `~/.config/DankMaterialShell/plugins/aiUsage`. Cached usage lives in
+`~/.cache/dms-ai-usage/` and can be deleted with it.
 
 ## Usage
 
@@ -220,5 +258,18 @@ Set `DMS_QML_ROOT` if DMS is installed somewhere other than `/usr/share/quickshe
 DMS can cache child QML components during plugin reloads. Restart DMS after updating
 the plugin if old controls remain visible.
 
-Inspired by [titeya/dms-claudecode](https://github.com/titeya/dms-claudecode).
-MIT licensed; attribution to Nicolas Bellamy's reference design is retained in LICENSE.
+## Reporting a problem
+
+Open an issue at
+[ilajosmanov/dms-ai-usage-tracker/issues](https://github.com/ilajosmanov/dms-ai-usage-tracker/issues).
+Include your DMS version (`dms version`), your Python version, and the output of
+`python3 get-ai-usage` from the plugin directory. That output is sanitized: it carries
+usage numbers and model names, never credentials, email addresses, or account ids.
+
+For a widget that will not appear, check **Settings → Plugins** first, then restart
+DMS — child QML components can survive a plugin reload.
+
+## License
+
+MIT. Inspired by [titeya/dms-claudecode](https://github.com/titeya/dms-claudecode);
+attribution to Nicolas Bellamy's reference design is retained in LICENSE.

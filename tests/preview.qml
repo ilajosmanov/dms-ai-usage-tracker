@@ -48,7 +48,7 @@ ShellRoot {
     }
     FloatingWindow {
         id: window
-        title: "AI Usage Preview"
+        title: "Subscription Usage Meter Preview"
         visible: true
         implicitWidth: 440
         implicitHeight: 560
@@ -177,8 +177,8 @@ ShellRoot {
                     throw new Error("A healthy column keeps its limits while the other is missing");
             }
             if (preview.isBarStage) {
-                if (pill.Accessible.name !== "AI Usage")
-                    throw new Error("Bar must be titled AI Usage");
+                if (pill.Accessible.name !== "Subscription Usage Meter")
+                    throw new Error("Bar must be titled Subscription Usage Meter");
                 if (pill.codex.provider !== "codex" || pill.claude.provider !== "claude")
                     throw new Error("The pill must receive both providers");
                 var bars = preview.findNamed(pill, "usageBars");

@@ -8,7 +8,7 @@ PluginSettings {
     pluginId: "aiUsage"
     StyledText {
         width: parent.width
-        text: "AI Usage"
+        text: "Subscription Usage Meter"
         color: Theme.surfaceText
         font.pixelSize: Theme.fontSizeLarge
         font.weight: Font.Medium

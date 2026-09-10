@@ -1,14 +1,15 @@
 {
   "id": "aiUsage",
-  "name": "AI Usage",
+  "name": "Subscription Usage Meter",
   "description": "Account-wide Codex and Claude subscription usage in one segmented bar meter.",
-  "version": "0.3.0",
-  "author": "io",
+  "version": "1.0.0",
+  "author": "ilajosmanov",
   "icon": "monitoring",
   "type": "widget",
-  "capabilities": ["dankbar-widget"],
   "component": "./AIUsageWidget.qml",
   "settings": "./AIUsageSettings.qml",
-  "requires": ["python3"],
-  "permissions": ["settings_read", "settings_write"]
+  "capabilities": ["dankbar-widget"],
+  "dependencies": ["python3", "claude"],
+  "requires_dms": ">=1.6.0",
+  "permissions": ["settings_read", "settings_write", "process", "network"]
 }

@@ -30,13 +30,19 @@ Column {
         height: 26
         StyledText {
             anchors.left: parent.left
+            // The actions keep their natural width; the title is what gives way,
+            // so a large font scale can never push "Updated" off the header.
+            anchors.right: headerActions.left
+            anchors.rightMargin: 8
             anchors.verticalCenter: parent.verticalCenter
-            text: root.snapshot.demo ? "AI Usage · Demo" : "AI Usage"
+            elide: Text.ElideRight
+            text: root.snapshot.demo ? "Subscription Usage Meter · Demo" : "Subscription Usage Meter"
             color: Theme.surfaceText
             font.pixelSize: Math.round(Theme.fontScale * 14)
             font.weight: Font.Medium
         }
         Row {
+            id: headerActions
             anchors.right: parent.right
             anchors.verticalCenter: parent.verticalCenter
             spacing: 4

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Install a development symlink and add AI Usage to the first enabled DankBar."""
+"""Install a development symlink and add Subscription Usage Meter to the first enabled DankBar."""
 import argparse
 import json
 import os
@@ -35,7 +35,7 @@ if not args.no_bar and settings_path.is_file():
     bars = settings.get("barConfigs", [])
     bar = next((b for b in bars if b.get("enabled", True)), None)
     if bar is None:
-        print("No enabled bar found. Add AI Usage in DMS settings.")
+        print("No enabled bar found. Add Subscription Usage Meter in DMS settings.")
     else:
         def widget_id(widget):
             return widget.get("id") if isinstance(widget, dict) else widget
@@ -59,4 +59,4 @@ if shutil.which("dms"):
             time.sleep(0.2)
             result = subprocess.run(command, text=True, capture_output=True, timeout=10)
         print(result.stdout.strip() or result.stderr.strip())
-print("If the widget is not visible yet, enable AI Usage in DMS Settings → Plugins and add it under DankBar widgets.")
+print("If the widget is not visible yet, enable Subscription Usage Meter in DMS Settings → Plugins and add it under DankBar widgets.")

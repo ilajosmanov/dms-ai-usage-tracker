@@ -16,7 +16,7 @@ Item {
     readonly property int overPaceCount: showPacing && !failed ? meters.filter(function(a) { return Usage.overPace(a, root.now); }).length : 0
     implicitWidth: vertical ? Math.max(28, values.implicitWidth) : bars.width + 7 + values.implicitWidth
     implicitHeight: vertical ? bars.height + 4 + values.implicitHeight : Math.max(bars.height, values.implicitHeight)
-    Accessible.name: "AI Usage"
+    Accessible.name: "Subscription Usage Meter"
     Accessible.description: detail(codex, "Codex") + "; " + detail(claude, "Claude") + ". Each column is one subscription's own quota, not a shared total."
 
     function detail(account, name) {
