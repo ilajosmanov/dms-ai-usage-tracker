@@ -154,9 +154,24 @@ def refresh_group(group, cached, now, offline=False, force=False, interval=120, 
             except (ValueError, TypeError, KeyError, AttributeError):
                 error = UsageError("Provider response format changed. Check for a plugin update.")
                 break
+    # Only an HTTP provider can declare its own wait, and that one is honored
+    # whole. Claude answers through a subprocess, so no failure of its own ever
+    # carries a 429 or a Retry-After, and `nextAttempt` alone does not bound it:
+    # manual refresh is allowed to skip that, which spends a real service request
+    # every five seconds for as long as the button is pressed. So a failed native
+    # check earns a hold of the collector's own floor -- long enough to stop a
+    # hammer, short enough that a refresh still helps someone who just fixed the
+    # cause, and published as `retryAt`, so the panel says why it is waiting
+    # rather than leaving a button that looks broken.
+    #
+    # An `auth` failure is never held. The fix for one is a sign-in, and checking
+    # that the sign-in worked is the first thing anyone does after it.
+    held = (error.retry_after if error.rate_limited
+            else min(error.retry_after, claude.MIN_INTERVAL)
+            if native and error.status != "auth" else 0)
     schedule = {"lastAttempt": now, "credentialFingerprint": fingerprint,
                 "nextAttempt": now + error.retry_after,
-                "retryNotBefore": now + error.retry_after if error.rate_limited else 0}
+                "retryNotBefore": now + held if held else 0}
     if native:
         # Renewal can succeed while usage retrieval fails. Record the rotated token
         # even then, otherwise the next poll mistakes it for a new login and retries.

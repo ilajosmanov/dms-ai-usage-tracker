@@ -211,6 +211,14 @@ Manual refresh bypasses the normal interval with a five-second cooldown. A click
 during collection is held until the current process finishes. Provider retry waits
 are retained and cannot be shortened by manual refresh. Direct HTTP responses honor
 numeric or HTTP-date `Retry-After` values, including waits longer than an hour.
+
+A subprocess cannot report a 429, so a failed Claude check declares a wait of its
+own: five minutes, which manual refresh also cannot shorten, since otherwise the
+button would spend a real request every five seconds for as long as it was
+pressed. The wait is shown in the column, and it is capped at five minutes even
+when the automatic interval is longer, so a refresh still helps once the cause is
+fixed. A sign-in failure is never held — checking that a new sign-in worked is the
+first thing anyone does after one.
 Claude's control response does not expose every upstream error or retry header;
 when it cannot answer, retry after at least five minutes or the selected interval,
 whichever is longer. This is reported as a failed refresh, without claiming the

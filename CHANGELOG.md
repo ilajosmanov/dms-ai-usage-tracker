@@ -16,6 +16,14 @@ All notable changes to this plugin. Versions follow [semantic versioning](https:
   dated when it was requested; the disk capture stays as the cheaper source and
   the offline fallback.
 
+- A failed Claude check now sets a backoff that manual refresh cannot shorten.
+  Claude answers through a subprocess, so none of its failures can carry a 429 or
+  a `Retry-After`, and only `nextAttempt` bounded them — which manual refresh is
+  allowed to skip, so a held-down refresh button could spend a usage request every
+  five seconds. The backoff is capped at the five-minute floor even when the
+  configured interval is longer, and a sign-in failure is never held, so fixing
+  either cause and pressing refresh still works.
+
 ### Changed
 
 - The bar now charts each provider's **shortest** window — Claude's five-hour

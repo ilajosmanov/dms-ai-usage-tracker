@@ -97,6 +97,24 @@ class ClaudeTests(unittest.TestCase):
     def mode(self, name):
         (self.profile / 'mode').write_text(name)
 
+    def failing_mode(self, name):
+        """A fake mode as a context manager, with no capture left behind.
+
+        Modes such as `null` write a capture before failing, and a current capture
+        is a good column: the collector would publish it and the failure would stop
+        being observable in the account's status.
+        """
+        collector = self
+        class Mode:
+            def __enter__(self):
+                collector.mode(name)
+                self.state = (collector.profile / '.claude.json').read_text()
+            def __exit__(self, *exception):
+                (collector.profile / '.claude.json').write_text(self.state)
+                collector.mode('success')
+                return False
+        return Mode()
+
     def credential(self):
         return next(iter(discover(self.config, self.home).values()))[0]
 
@@ -158,6 +176,106 @@ class ClaudeTests(unittest.TestCase):
         self.assertFalse((self.profile/'calls').exists())
         stored = json.loads(self.cache.read_text())['accounts'][account['id']]
         self.assertEqual(stored['nextAttempt'], account['updatedAt'] + 1800)
+
+    def test_polling_faster_than_the_interval_never_reaches_the_service(self):
+        """Publishing the reply changed what we do with it, not how often we ask.
+
+        Claude's usage request goes through a subprocess, so there is no HTTP layer
+        to surface a 429 and no `Retry-After` to honor. The interval is the only
+        thing bounding requests to the service, and the widget polls the collector
+        every thirty seconds regardless of what the last one returned.
+        """
+        self.config['refreshInterval'] = 30
+        self.write_state(age=7200)  # nothing current enough to reuse
+        for _ in range(6):
+            self.assertEqual(self.collect()['status'], 'ok')
+        self.assertEqual((self.profile/'calls').read_text().count('call'), 1,
+                         'six polls inside one interval are one request')
+        account = self.collect()
+        stored = json.loads(self.cache.read_text())['accounts'][account['id']]
+        self.assertEqual(stored['nextAttempt'], account['updatedAt'] + 1800,
+                         'the next one is released by the interval, nothing else')
+
+    def test_a_failed_check_is_never_retried_faster_than_the_floor(self):
+        """A provider that stops answering must not be asked back any sooner.
+
+        Every failure shape is checked, because each raises its own `retry_after`
+        and a single one that forgot the floor would poll the service ten times an
+        hour for as long as the failure lasted.
+        """
+        unavailable = patch('collector.claude._request',
+                            return_value={'rate_limits_available': False})
+        # `null` writes a capture before failing, and a current client capture is a
+        # good column, so that one still publishes `ok`. The schedule underneath it
+        # is the failure's either way, which is what bounds the next request.
+        cases = (('limits unavailable', unavailable, 'stale'),
+                 ('control error', self.failing_mode('error'), 'stale'),
+                 ('unusable reply', self.failing_mode('null'), 'ok'))
+        for interval, floor in ((2, 300), (30, 1800)):
+            for name, failure, status in cases:
+                with self.subTest(interval=interval, failure=name):
+                    self.config['refreshInterval'] = interval
+                    self.cache.unlink(missing_ok=True)
+                    self.write_state(age=7200)
+                    with failure:
+                        account = self.collect()
+                    self.assertEqual(account['status'], status)
+                    self.assertEqual(account['origin'], 'Claude Code',
+                                     'a failed check must publish nothing of its own')
+                    stored = json.loads(self.cache.read_text())['accounts'][account['id']]
+                    wait = stored['nextAttempt'] - time.time()
+                    self.assertGreaterEqual(wait, 295, f'{name} retries after {wait:.0f}s')
+                    # A failure never earns a shorter wait than the interval a
+                    # success would have set.
+                    if name == 'limits unavailable':
+                        self.assertGreaterEqual(wait, floor - 5)
+
+    def test_a_failed_check_cannot_be_hammered_by_manual_refresh(self):
+        """Nothing else bounds the button: a subprocess never reports a 429."""
+        self.config['refreshInterval'] = 30
+        self.write_state(age=7200)
+        with self.failing_mode('error'):
+            account = self.collect()
+            self.assertEqual(account['status'], 'stale')
+            self.assertEqual((self.profile/'calls').read_text().count('call'), 1)
+            # Published, so the panel says why the button is waiting instead of
+            # leaving a click that does nothing.
+            self.assertGreater(account['retryAt'], time.time() + 290)
+            # Force, well past the five-second cooldown, spends nothing more.
+            stored = json.loads(self.cache.read_text())
+            stored['accounts'][account['id']]['lastAttempt'] = time.time() - 60
+            self.cache.write_text(json.dumps(stored))
+            self.collect(force=True)
+            self.assertEqual((self.profile/'calls').read_text().count('call'), 1)
+
+    def test_a_sign_in_failure_is_never_held_against_the_next_check(self):
+        """The fix for an auth failure is a sign-in, and it has to be checkable.
+
+        A hold ignores a changed credential, so holding this one would strand the
+        user for five minutes at the exact moment they want to confirm the fix.
+        """
+        self.write_state(age=7200)  # leaves the stored login expired
+        with patch('collector.claude._request',
+                   return_value={'rate_limits_available': False}):
+            account = self.collect()
+        self.assertIn('Sign in again', account['message'])
+        self.assertEqual(account['retryAt'], 0)
+
+    def test_a_long_interval_does_not_lock_the_button_for_the_whole_interval(self):
+        """`nextAttempt` carries the full wait; the hold only has to outlast a hammer."""
+        self.config['refreshInterval'] = 30
+        self.write_state(age=7200)
+        (self.profile/'.credentials.json').write_text(json.dumps({'claudeAiOauth':{
+            'accessToken':'current-private-token','expiresAt':(time.time()+3600)*1000}}))
+        with patch('collector.claude._request',
+                   return_value={'rate_limits_available': False}):
+            account = self.collect()
+        stored = json.loads(self.cache.read_text())['accounts'][account['id']]
+        self.assertGreaterEqual(stored['nextAttempt'], time.time() + 1795,
+                                'automatic polls still wait the configured interval')
+        self.assertGreater(account['retryAt'], time.time() + 290)
+        self.assertLessEqual(account['retryAt'], time.time() + 301,
+                             'a thirty-minute wait must not lock the button for thirty minutes')
 
     def test_offline_never_starts_claude(self):
         self.collect(offline=True)
