@@ -181,11 +181,25 @@ def refresh_group(group, cached, now, offline=False, force=False, interval=120, 
     return {**base, **failed, "status": error.status}
 
 
+def tracked_window(windows):
+    """History follows one window for its whole life, so it follows the shortest one.
+
+    Deliberately not the headline window the panel shows. That one is whichever
+    meter is fullest and is meant to move between polls; a sparkline that switched
+    between a five-hour peak and a weekly one would be charting two different
+    quantities, and `comparable` would discard the week's peaks every time it moved.
+    """
+    known = [w for w in windows if w.get("duration") is not None]
+    if known:
+        return min(known, key=lambda w: w["duration"])
+    return windows[0] if windows else {}
+
+
 def record_history(result, now):
-    """Daily peak of the primary window; never imply token counts or spend."""
+    """Daily peak of the tracked window; never imply token counts or spend."""
     today = datetime.fromtimestamp(now).date()
     cutoff = str(today - timedelta(days=6))
-    primary = result["windows"][0] if result["windows"] else {}
+    primary = tracked_window(result["windows"])
     key, span, value = primary.get("id", ""), primary.get("duration"), primary.get("used")
     if value is None:
         return result

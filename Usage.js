@@ -51,19 +51,101 @@ function percent(window) {
     return window.used > 0 && window.used < 1 ? "<1%" : Math.round(window.used) + "%";
 }
 
+var SEVERITY_RANK = {critical: 3, warning: 2, normal: 1};
+
+// A subscription is not one meter. Claude alone reports a five-hour session, a
+// rolling week, and a week per model, and any of them can be the wall you hit
+// first. Ranking them by fullness is the only reading that answers "how much room
+// is left": a session meter at 0% one minute into a fresh window is true and
+// says nothing, while the weekly one beside it sits at 97%.
+//
+// The provider's own flags break ties only. They are advisory, Codex sends
+// neither, and a plainly fuller meter must always outrank a label.
+function urgency(window) {
+    if (!window || typeof window.used !== "number" || !isFinite(window.used))
+        return null;
+    return [window.used, window.active ? 1 : 0,
+            SEVERITY_RANK[String(window.severity || "")] || 0,
+            // Same fullness, less time to spend it: the shorter window binds first.
+            -(window.duration || 0)];
+}
+
+function outranks(candidate, best) {
+    for (var i = 0; i < candidate.length; i++) {
+        if (candidate[i] !== best[i])
+            return candidate[i] > best[i];
+    }
+    return false;
+}
+
+// The binding constraint: the window the panel marks as limiting and the account
+// picker opens on. The pill charts `barWindow` instead, which is a different
+// question -- "what am I spending right now" rather than "what stops me first".
+function primaryWindow(account) {
+    var windows = (account && account.windows) || [];
+    var best = null;
+    var rank = null;
+    for (var i = 0; i < windows.length; i++) {
+        var score = urgency(windows[i]);
+        if (score === null)
+            continue;
+        if (rank === null || outranks(score, rank)) {
+            best = windows[i];
+            rank = score;
+        }
+    }
+    // No window carries a usable number. Keep the provider's first one so the
+    // panel still names a limit instead of going blank.
+    return best || windows[0];
+}
+
 function primaryUsage(account) {
-    var window = account && (account.windows || [])[0];
+    var window = primaryWindow(account);
+    return window && typeof window.used === "number" && isFinite(window.used) ? window.used : null;
+}
+
+// The window the bar charts: the shortest one the provider reports, which is
+// Claude's five-hour session and Codex's week when it publishes nothing shorter.
+//
+// Deliberately not the fullest one. A bar is read as a rate -- how fast the
+// current stretch of work is burning quota -- and a meter that swapped between a
+// session and a rolling week as either grew fuller would be charting two
+// different quantities minute to minute, with no way to tell from the bar which
+// one it meant. The collector's `tracked_window` pins the sparkline to the
+// shortest window for the same reason, so the pill and that history now speak
+// about the same meter. What stops you first still has a home: the panel names
+// its limiting window, and `nearLimit` still colors a week that is nearly spent.
+function barWindow(account) {
+    var windows = (account && account.windows) || [];
+    var best = null;
+    for (var i = 0; i < windows.length; i++) {
+        var candidate = windows[i];
+        if (!candidate || typeof candidate.used !== "number" || !isFinite(candidate.used)
+            || typeof candidate.duration !== "number" || !isFinite(candidate.duration))
+            continue;
+        if (!best || candidate.duration < best.duration)
+            best = candidate;
+    }
+    // Nothing carries both a reading and a length, so there is no "shortest" to
+    // pick. Fall back to the panel's choice rather than leaving the pill blank.
+    return best || primaryWindow(account);
+}
+
+function barUsage(account) {
+    var window = barWindow(account);
     return window && typeof window.used === "number" && isFinite(window.used) ? window.used : null;
 }
 
 function barAccounts(codex, claude) {
-    return [codex, claude].filter(function(a) { return primaryUsage(a) !== null; });
+    return [codex, claude].filter(function(a) { return barUsage(a) !== null; });
 }
 
 
+// Paces the window the bar is showing. The arrow sits against that number, so it
+// has to be an opinion about the same meter.
 function overPace(account, now) {
     if (!account || account.status !== "ok") return false;
-    var pacing = pace((account.windows || [])[0], now);
+    var pacing = pace(barWindow(account), now);
     return pacing !== null && pacing.delta >= 2;
 }
 
@@ -91,8 +173,13 @@ function modelLabel(name) {
     return String(name || "").replace(/\s*\b20\d{6}\b\s*$/, "").trim();
 }
 
+// Caution is earned either way: by the number, or by the provider saying so.
 function nearLimit(window) {
-    return !!window && typeof window.used === "number" && isFinite(window.used) && window.used >= 90;
+    if (!window)
+        return false;
+    if (String(window.severity || "") === "critical")
+        return true;
+    return typeof window.used === "number" && isFinite(window.used) && window.used >= 90;
 }
 
 function clientLabel(label) {
@@ -212,8 +299,9 @@ function representativeAccount(accounts) {
     var selected = null;
     var highest = -1;
     accounts.forEach(function(account) {
-        var primary = (account.windows || [])[0];
-        var used = primary && typeof primary.used === "number" ? primary.used : -1;
+        var used = primaryUsage(account);
+        if (used === null)
+            used = -1;
         if (!selected || used > highest) {
             selected = account;
             highest = used;
@@ -233,6 +321,25 @@ function days(history, now) {
             value: match ? match.value : null});
     }
     return result;
+}
+
+// The daily peak follows the shortest window for its whole life, which is rarely
+// the headline one. Saying which window it charts is the difference between a
+// number and a claim.
+function historyLabel(history) {
+    var spans = (history || []).map(function(h) { return h.duration; })
+        .filter(function(d) { return typeof d === "number" && isFinite(d) && d > 0; });
+    if (!spans.length)
+        return "Daily peak";
+    return "Daily peak · " + shortWindow(spanLabel(spans[0]));
+}
+
+function spanLabel(seconds) {
+    if (seconds % 86400 === 0)
+        return (seconds / 86400) + "-day window";
+    if (seconds % 3600 === 0)
+        return (seconds / 3600) + "-hour window";
+    return "window";
 }
 
 function dayTooltip(day) {

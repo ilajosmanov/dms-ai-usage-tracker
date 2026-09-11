@@ -2,6 +2,27 @@
 
 All notable changes to this plugin. Versions follow [semantic versioning](https://semver.org).
 
+## Unreleased
+
+### Fixed
+
+- Claude usage stopped updating whenever Claude Code was not being used
+  interactively. The collector ran the usage request successfully but then refused
+  to publish the result unless Claude Code had also written a fresh
+  `cachedUsageUtilization` capture to disk — which it never does during a
+  `--print` run. Every refresh therefore failed with "could not verify fresh
+  usage" and a five-to-thirty-minute backoff, and the column went blank after 24
+  hours. The control reply is a live reading and is now published on its own,
+  dated when it was requested; the disk capture stays as the cheaper source and
+  the offline fallback.
+
+### Changed
+
+- The bar now charts each provider's **shortest** window — Claude's five-hour
+  session — instead of its fullest. The popout continues to mark the fullest
+  window as the limiting one, and the daily-peak strip already tracked the
+  shortest window, so the bar and the strip below it now describe one meter.
+
 ## 1.0.0 — 2026-09-10
 
 First public release, submitted to the Dank Material Shell plugin registry.

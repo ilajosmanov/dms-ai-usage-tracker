@@ -1,8 +1,21 @@
 """Claude owns authentication and usage retrieval; we own process bounds and dating.
 
 get_usage is an experimental stream-json control request, not an inference prompt.
-Its response can hide a failed fetch behind cached data. Only Claude's account-bound
-disk capture supplies a trustworthy timestamp; never date the response itself now.
+It reaches the service on every call: consecutive replies carry different
+server-minted `resets_at` fractions, and a reply routinely reports usage the
+capture on disk does not have yet. So the reply is a reading, dated when we asked
+for it.
+
+The one reply that is not a live reading comes from essential-traffic mode, which
+blocks /api/oauth/usage in Claude 2.1.263 and substitutes a saved one. `_request`
+builds the child environment from scratch with no `CLAUDE_*` in it, so the setting
+that causes that cannot reach the subprocess.
+
+The account-bound disk capture stays as the cheaper source: `read` serves it while
+it is current, and it remains the fallback when the process cannot be run at all.
+It is not a precondition for publishing a reading we just took ourselves -- Claude
+Code does not write a capture during a `--print` run, so requiring one made every
+refresh fail for anyone not actively using Claude Code.
 """
 
 import json
@@ -160,22 +173,8 @@ def _request(credential):
                 stream.close()
 
 
-def _same_windows(current, saved):
-    """The service varies reset fractions between otherwise identical readings."""
-    if len(current) != len(saved):
-        return False
-    for left, right in zip(current, saved):
-        left, right = dict(left), dict(right)
-        reset, saved_reset = left.pop("resetAt", None), right.pop("resetAt", None)
-        if left != right:
-            return False
-        if reset != saved_reset and (reset is None or saved_reset is None or abs(reset - saved_reset) >= 1):
-            return False
-    return True
-
-
 def fetch(credential, interval=MIN_INTERVAL):
-    """Fetch through Claude and verify identity, shape, and the dated capture."""
+    """Fetch through Claude and verify the account and shape of the reply."""
     try:
         result = _request(credential)
     except (OSError, subprocess.SubprocessError):
@@ -194,8 +193,7 @@ def fetch(credential, interval=MIN_INTERVAL):
         data = parse_claude(limits)
     except (UsageError, ValueError, TypeError, KeyError, AttributeError):
         raise UsageError("Claude Code returned an unsupported usage response.", retry_after=300) from None
-    now = time.time()
-    reading = read(credential, now)
-    if not reading or now - reading["fetchedAt"] >= interval or not _same_windows(data["windows"], reading["data"]["windows"]):
-        raise UsageError("Claude could not verify fresh usage. Retrying later.", retry_after=max(300, interval))
-    return reading
+    data["plan"] = credential.get("plan") or data["plan"]
+    # A check we ran ourselves, so it carries no origin: the panel's own header
+    # clock speaks for it, exactly as it does for a direct provider fetch.
+    return {"data": data, "fetchedAt": time.time(), "origin": ""}

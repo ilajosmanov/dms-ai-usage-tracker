@@ -19,8 +19,11 @@ Item {
     Accessible.name: "Subscription Usage Meter"
     Accessible.description: detail(codex, "Codex") + "; " + detail(claude, "Claude") + ". Each column is one subscription's own quota, not a shared total."
 
+    // One number per provider, so it has to be named: "5% used" and "5% of the
+    // five-hour session" are different claims and only the second one is
+    // actionable. The full set of windows stays one click away in the popout.
     function detail(account, name) {
-        var primary = (account.windows || [])[0];
+        var primary = Usage.barWindow(account);
         if (!primary) return name + ": " + (account.status === "auth" ? "sign-in needed" : "not connected");
         return name + ": " + Usage.percent(primary) + " used · " + primary.label + (root.failed || account.status === "stale" ? " (saved usage)" : "");
     }
@@ -40,7 +43,7 @@ Item {
             Rectangle {
                 id: barTrack
                 required property var modelData
-                readonly property var window: (modelData.windows || [])[0]
+                readonly property var window: Usage.barWindow(modelData)
                 readonly property bool known: window && typeof window.used === "number" && isFinite(window.used)
                 objectName: "usageBar-" + modelData.provider
                 width: 4
@@ -96,7 +99,7 @@ Item {
                 }
                 StyledText {
                     objectName: "barPercent-" + meter.modelData.provider
-                    text: Usage.percent((meter.modelData.windows || [])[0])
+                    text: Usage.percent(Usage.barWindow(meter.modelData))
                     color: meter.accent
                     font.pixelSize: root.vertical ? Math.round(Theme.fontScale * 11) : Theme.fontSizeSmall
                     font.weight: Font.Medium

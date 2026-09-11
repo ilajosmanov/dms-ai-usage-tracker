@@ -30,6 +30,16 @@ ShellRoot {
         }
         return null;
     }
+    // The pill charts the session window and the panel headlines the fullest
+    // one, so a stage that wants a provider to read 0% or 80% everywhere has to
+    // move every window, not just the first.
+    function setUsage(account, used, spent) {
+        (account.windows || []).forEach(function(w) {
+            w.used = used;
+            if (spent !== undefined)
+                w.resetAt = Date.now() / 1000 + w.duration * (1 - spent);
+        });
+    }
     function column(provider) {
         var found = preview.findNamed(dashboard, "providerColumn-" + provider);
         if (!found) throw new Error("Both providers must be on screen at once; missing " + provider);
@@ -139,8 +149,27 @@ ShellRoot {
                 var claudeFill = preview.findNamed(dashboard, "limitFill-claude-0");
                 if (String(codexFill.color) === String(claudeFill.color))
                     throw new Error("Each column keeps its own brand fill");
-                if (!(claudeFill.width > codexFill.width))
-                    throw new Error("Limit fills must be proportional to their own quota");
+                // Within one column, where the three windows are a session, a week
+                // and a per-model week: fill width has to follow each row's own
+                // percentage, not the row's position.
+                var fills = [0, 1, 2].map(function(i) {
+                    return preview.findNamed(dashboard, "limitFill-claude-" + i);
+                });
+                if (fills.some(function(f) { return !f; }))
+                    throw new Error("Every reported limit needs its own row");
+                if (!(fills[0].width < fills[1].width && fills[1].width < fills[2].width))
+                    throw new Error("Limit fills must be proportional to their own quota: "
+                        + fills.map(function(f) { return f.width; }).join(","));
+                // The panel marks the fullest window as limiting, not the first
+                // row, while the pill beside it charts the session. The two
+                // answer different questions and must not collapse into one.
+                var claudeAccount = preview.column("claude").account;
+                var headline = Usage.primaryWindow(claudeAccount);
+                if (headline.id !== "weekly_scoped:fable")
+                    throw new Error("An idle session window must not headline a nearly spent week: " + headline.id);
+                if (Usage.barWindow(claudeAccount).id !== "five_hour")
+                    throw new Error("The bar must chart the session window, not the limiting one: "
+                        + Usage.barWindow(claudeAccount).id);
                 var tick = preview.findNamed(dashboard, "paceTick-codex-0");
                 if (!tick.visible || tick.x <= 0)
                     throw new Error("A fixed-length window must mark its elapsed pace");
@@ -188,8 +217,16 @@ ShellRoot {
                     var claudeBar = preview.findNamed(pill, "usageBarFill-claude");
                     if (!codexBar || !claudeBar)
                         throw new Error("Every metered provider needs its own bar");
-                    if (!(claudeBar.height > codexBar.height))
-                        throw new Error("Bar height must follow each provider's own utilization");
+                    // Demo data: Codex burns 38% of its session, Claude 12% of
+                    // its own while sitting on a 94% Fable week. The taller bar
+                    // is Codex's, which is only true if neither bar is charting
+                    // the week it happens to sit beside.
+                    if (!(codexBar.height > claudeBar.height))
+                        throw new Error("Bar height must follow each provider's own session window");
+                    var claudePercent = preview.findNamed(pill, "barPercent-claude");
+                    if (!claudePercent || claudePercent.text !== "12%")
+                        throw new Error("A nearly spent week must not raise the session bar: "
+                            + (claudePercent ? claudePercent.text : "no label"));
                     if (String(codexBar.color) === String(claudeBar.color))
                         throw new Error("Bars keep their brand colors");
                 }
@@ -197,7 +234,7 @@ ShellRoot {
                     if (pill.meters.length !== 2)
                         throw new Error("Both providers must remain in the panel when usage resets to zero");
                     pill.meters.forEach(function(account) {
-                        if (Usage.primaryUsage(account) !== 0) return;
+                        if (Usage.barUsage(account) !== 0) return;
                         var track = preview.findNamed(pill, "usageBar-" + account.provider);
                         var fill = preview.findNamed(pill, "usageBarFill-" + account.provider);
                         var label = preview.findNamed(pill, "barPercent-" + account.provider);
@@ -302,15 +339,11 @@ ShellRoot {
                     data.accounts[1].retryAt = Date.now() / 1000 + 3300;
                     data.accounts[1].updatedAt = Date.now() / 1000 - 900;
                 }
-                if (preview.stage === 7 || preview.stage === 8) data.accounts[1].windows[0].used = 0;
-                if (preview.stage === 9) data.accounts[0].windows[0].used = 0;
-                if (preview.stage === 10 || preview.stage === 13) {
-                    data.accounts.forEach(function(a) {
-                        a.windows[0].used = 80;
-                        a.windows[0].resetAt = Date.now() / 1000 + a.windows[0].duration * 0.8;
-                    });
-                }
-                if (preview.stage === 11) data.accounts.forEach(function(a) { a.windows[0].used = 0; });
+                if (preview.stage === 7 || preview.stage === 8) preview.setUsage(data.accounts[1], 0);
+                if (preview.stage === 9) preview.setUsage(data.accounts[0], 0);
+                if (preview.stage === 10 || preview.stage === 13)
+                    data.accounts.forEach(function(a) { preview.setUsage(a, 80, 0.2); });
+                if (preview.stage === 11) data.accounts.forEach(function(a) { preview.setUsage(a, 0); });
                 if (preview.stage === 12) data.accounts.forEach(function(a) { a.windows = []; a.status = "missing"; });
                 SessionData.isLightMode = preview.stage === 5 || preview.stage === 13;
                 preview.data = data;

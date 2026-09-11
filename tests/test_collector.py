@@ -44,6 +44,24 @@ class ProviderTests(unittest.TestCase):
         self.assertEqual([window["label"] for window in result["windows"]], ["5-hour window", "Fable · 7 days"])
 
 
+    def test_claude_carries_the_services_own_verdict_on_each_window(self):
+        result = parse_claude({"limits": [
+            {"kind": "session", "percent": 3, "severity": "normal", "is_active": False},
+            {"kind": "weekly_all", "percent": 76, "severity": "warning", "is_active": False},
+            {"kind": "weekly_scoped", "percent": 97, "severity": "critical", "is_active": True,
+             "scope": {"model": {"display_name": "Fable"}}}]})
+        self.assertEqual([(w["severity"], w["active"]) for w in result["windows"]],
+                         [("normal", False), ("warning", False), ("critical", True)])
+
+    def test_a_provider_that_reports_no_verdict_still_gets_a_usable_window(self):
+        """Codex sends neither flag, and the panel must not have to guess their type."""
+        codex = parse_codex({"rate_limit": {"primary_window": {
+            "used_percent": 20, "limit_window_seconds": 18000, "reset_at": 1900000000}}})
+        legacy = parse_claude({"five_hour": {"utilization": 40}})
+        for windows in (codex["windows"], legacy["windows"]):
+            self.assertEqual(windows[0]["severity"], "")
+            self.assertIs(windows[0]["active"], False)
+
     def test_claude_window_order_does_not_follow_response_key_order(self):
         five, seven = {"utilization": 10}, {"utilization": 90}
         for data in ({"five_hour": five, "seven_day": seven}, {"seven_day": seven, "five_hour": five}):
@@ -244,6 +262,22 @@ class StateTests(unittest.TestCase):
         self.assertEqual(len(renamed["history"]), 2, "a renamed window of the same length keeps its peaks")
         regrouped = record_history({"windows": [{"id": "7d", "used": 10, "duration": 604800}], "history": peaks}, self.now)
         self.assertEqual(len(regrouped["history"]), 1, "peaks from a different window length are not comparable")
+
+    def test_history_tracks_the_shortest_window_not_the_fullest_one(self):
+        """The panel headlines whichever window is fullest; the sparkline must not.
+
+        A five-hour peak and a weekly peak are different quantities, so following
+        the headline would make `comparable` discard the week every time it moved.
+        """
+        yesterday = str(datetime.fromtimestamp(self.now).date() - timedelta(days=1))
+        peaks = [{"date": yesterday, "value": 40, "window": "five_hour", "duration": 18000}]
+        windows = [{"id": "seven_day", "used": 97, "duration": 604800},
+                   {"id": "five_hour", "used": 3, "duration": 18000}]
+        for order in (windows, list(reversed(windows))):
+            result = record_history({"windows": order, "history": list(peaks)}, self.now)
+            today = [x for x in result["history"] if x["date"] != yesterday][0]
+            self.assertEqual(today["value"], 3, "the fuller weekly window must not enter a 5-hour series")
+            self.assertEqual(len(result["history"]), 2, "yesterday's 5-hour peak survives")
 
     def test_unchanged_usage_does_not_rewrite_the_cache(self):
         with tempfile.TemporaryDirectory() as folder:

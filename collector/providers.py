@@ -105,12 +105,18 @@ def timestamp(value):
     return None
 
 
-def window(key, label, used, reset, duration):
+def window(key, label, used, reset, duration, severity="", active=False):
+    """`severity` and `active` are the provider's own opinion of a window.
+
+    They are advisory: not every provider sends them, and the panel only ever uses
+    them to break a tie between two equally full meters. The reading is `used`.
+    """
     pct = number(used)
     if pct is None or pct < 0:
         return None
     return {"id": key, "label": label, "used": pct,
-            "resetAt": timestamp(reset), "duration": number(duration)}
+            "resetAt": timestamp(reset), "duration": number(duration),
+            "severity": str(severity or ""), "active": bool(active)}
 
 
 def duration_label(seconds, fallback):
@@ -171,7 +177,8 @@ def parse_claude(data):
             key, label, duration = canonical[kind]
         else:
             continue
-        result = window(key, label, item.get("percent", item.get("utilization")), item.get("resets_at"), duration)
+        result = window(key, label, item.get("percent", item.get("utilization")), item.get("resets_at"),
+                        duration, item.get("severity"), item.get("is_active"))
         if result:
             windows.append(result)
             seen.add(key)

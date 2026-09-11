@@ -109,7 +109,7 @@ class ClaudeTests(unittest.TestCase):
             account = self.collect()
             self.assertEqual(account['status'], 'ok')
             self.assertEqual([w['used'] for w in account['windows']], [12,76,97])
-            self.assertEqual(account['origin'], 'Claude Code')
+            self.assertEqual(account['origin'], '', 'a check we ran ourselves is not attributed to the client')
             self.assertLess(time.time()-account['updatedAt'], 5)
             before = self.cache.read_bytes()
             again = self.collect()
@@ -119,14 +119,31 @@ class ClaudeTests(unittest.TestCase):
         self.assertNotIn('private-token', json.dumps(account))
         self.assertNotIn('account-one', self.cache.read_text())
 
-    def test_unchanged_old_capture_is_not_relabelled_fresh(self):
-        self.mode('stale')
+    def test_a_live_reply_publishes_without_the_client_writing_a_capture(self):
+        """The whole point of running the process: Claude Code does not write a
+        capture during a `--print` run, so a reply that depends on one can never
+        be published by anyone who is not already using Claude Code interactively.
+        """
+        self.mode('stale')  # answers the control request, writes no capture
         account = self.collect()
+        self.assertEqual(account['status'], 'ok')
+        self.assertEqual([w['used'] for w in account['windows']], [12,76,97])
+        self.assertLess(time.time()-account['updatedAt'], 5)
+        self.assertEqual(account['message'], '')
+        self.assertEqual((self.profile/'calls').read_text().count('call'), 1)
+
+    def test_an_hour_old_capture_is_never_served_as_a_current_reading(self):
+        """`read` still dates a capture by when the client took it, not by now."""
+        self.write_state(age=3600)
+        reading = claude.read(self.credential(), time.time())
+        self.assertGreater(time.time()-reading['fetchedAt'], 3590)
+        self.assertEqual(reading['origin'], 'Claude Code')
+        # And a cache holding one that old is downgraded rather than shown as live.
+        self.mode('timeout')
+        with patch('collector.claude.TIMEOUT', .25):
+            account = self.collect()
         self.assertEqual(account['status'], 'stale')
         self.assertGreater(time.time()-account['updatedAt'], 3590)
-        self.assertIn('could not verify fresh', account['message'])
-        self.collect()
-        self.assertEqual((self.profile/'calls').read_text().count('call'), 1)
 
     def test_fresh_cache_avoids_process_even_before_first_network_check(self):
         self.write_state(age=30)
@@ -169,37 +186,40 @@ class ClaudeTests(unittest.TestCase):
         self.assertEqual(result['windows'], [])
         self.assertIn('account changed', result['message'])
 
-    def test_native_cached_reply_does_not_extend_freshness(self):
-        self.write_state(age=60)
+    def test_a_reply_is_dated_when_we_asked_for_it_not_by_the_capture(self):
+        """A reply that happens to agree with the capture is still our reading.
+
+        The capture is a cheaper source, not a witness. Dating a live reply by the
+        capture beside it would republish an hour-old timestamp for usage the
+        service reported a moment ago.
+        """
+        self.write_state(age=3600)
         state = json.loads((self.profile/'.claude.json').read_text())
         payload = state['cachedUsageUtilization']['utilization']
-        with patch('collector.claude._request', return_value={'rate_limits_available':True,'rate_limits':payload}):
+        with patch('collector.claude._request',
+                   return_value={'rate_limits_available':True,'rate_limits':payload}):
             result = self.collect(force=True)
-        self.assertGreater(time.time()-result['updatedAt'], 59)
+        self.assertEqual(result['status'], 'ok')
+        self.assertLess(time.time()-result['updatedAt'], 5)
         stored = json.loads(self.cache.read_text())['accounts'][result['id']]
         self.assertEqual(stored['nextAttempt'], result['updatedAt']+300)
 
-    def test_capture_comparison_tolerates_only_subsecond_reset_variation(self):
-        self.write_state(age=60)
-        path = self.profile / '.claude.json'
-        state = json.loads(path.read_text())
-        state['cachedUsageUtilization']['utilization']['five_hour']['resets_at'] = 1900000000.1
-        path.write_text(json.dumps(state))
-        for reset, used, accepted in ((1900000000.9, 40, True),
-                                      (1900000002.1, 40, False),
-                                      (1900000000.1, 41, False),
-                                      (None, 40, False)):
-            with self.subTest(reset=reset, used=used):
-                response = {'rate_limits_available': True, 'rate_limits': {
-                    'five_hour': {'utilization': used, 'resets_at': reset}}}
-                with patch('collector.claude._request', return_value=response):
-                    if accepted:
-                        reading = claude.fetch(self.credential())
-                        self.assertEqual(reading['fetchedAt'], state['cachedUsageUtilization']['fetchedAtMs']/1000)
-                        self.assertEqual(reading['data']['windows'][0]['resetAt'], 1900000000.1)
-                    else:
-                        with self.assertRaisesRegex(UsageError, 'could not verify fresh'):
-                            claude.fetch(self.credential())
+    def test_a_reply_newer_than_the_capture_is_published_not_discarded(self):
+        """The reply reaches the service; the capture lags it by minutes."""
+        self.write_state(age=600)
+        response = {'rate_limits_available': True, 'rate_limits': {'limits': [
+            {'kind': 'session', 'percent': 62, 'resets_at': 1900000000.4,
+             'severity': 'critical', 'is_active': True}]}}
+        with patch('collector.claude._request', return_value=response):
+            reading = claude.fetch(self.credential())
+        self.assertLess(time.time()-reading['fetchedAt'], 5)
+        window = reading['data']['windows'][0]
+        self.assertEqual(window['used'], 62)
+        self.assertEqual(window['resetAt'], 1900000000.4)
+        # The reply's own verdict travels with it, the capture's is not consulted.
+        self.assertEqual(window['severity'], 'critical')
+        self.assertEqual(reading['data']['plan'], self.credential()['plan'],
+                         "the credential's plan still outranks the parser's default")
 
     def test_ancient_capture_is_hidden_even_during_a_retry_wait(self):
         first = self.collect()
@@ -211,7 +231,7 @@ class ClaudeTests(unittest.TestCase):
         self.assertEqual(self.collect(force=True)['windows'], [])
         self.assertEqual((self.profile/'calls').read_text().count('call'), 1)
 
-    def test_success_with_missing_invalid_or_mismatched_capture_is_rejected(self):
+    def test_an_unusable_reply_is_rejected_and_a_future_capture_ignored(self):
         for mode in ('null','badshape'):
             with self.subTest(mode=mode):
                 self.write_state(age=3600)

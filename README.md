@@ -61,8 +61,23 @@ delete `~/.config/DankMaterialShell/plugins/aiUsage`. Cached usage lives in
 
 The bar shows one small vertical bar per consuming subscription, followed by
 color-matched percentages, without a text title. Each bar is its own quota: it fills
-from the bottom in proportion to that provider's displayed primary window, so 38% Codex
-and 56% Claude are two independently filled columns, never a shared total. Provider
+from the bottom in proportion to that provider's **shortest** window — Claude's
+five-hour session, and Codex's week where it reports nothing shorter — so 38% Codex
+and 12% Claude are two independently filled columns, never a shared total.
+
+A subscription is not one meter. Claude reports a five-hour session, a rolling week,
+and a week per model at the same time, and any of them can be the wall you hit first.
+The bar answers the narrower question of what the current stretch of work is
+spending, and names its window in the tooltip and accessible description. It is
+pinned to the session rather than following whichever window happens to be fullest,
+because a meter that swapped between a session and a rolling week as either grew
+would be charting two different quantities minute to minute — the same reason the
+daily-peak sparkline tracks the shortest window. What stops you first is the
+popout's job: it marks the fullest window as the limiting one.
+Where a provider grades its own windows, `critical` earns the caution color on its own,
+and its `severity`/`active` flags break ties between two equally full windows —
+they never outrank a plainly fuller meter. The popout still lists every window in
+window-length order, so the rows never reshuffle under the pointer. Provider
 color is the one thing here that does not follow your Material You palette, and the
 fills are the exact brand hex in light and dark themes, so a meter always reads as its
 own subscription. Brand-colored *text* darkens on a light surface, because the brand
@@ -109,9 +124,17 @@ without a reset time; the widget does not invent one. Codex Spark quota buckets 
 Anthropic's undocumented Nimbus Quill placeholder are intentionally hidden; real
 model-scoped Claude limits such as Fable remain visible.
 
-Each column's seven-day strip records daily peak primary-window utilization observed by
-this widget, today's bar at full brand strength. Unsampled days are missing, not zero.
-It is a quota chart, not a spend chart, and each day's date and peak are in its tooltip.
+Each column's seven-day strip records daily peak utilization observed by this widget,
+today's bar at full brand strength. Unsampled days are missing, not zero. It is a quota
+chart, not a spend chart, and each day's date and peak are in its tooltip.
+
+The strip follows one window for its whole life — the shortest one the provider
+reports — and its heading names it (**Daily peak · 5-hour**). That is the same
+window the bar charts, so the pill and the strip below it describe one meter.
+Deliberately not the popout's limiting window: that one is whichever is fullest and
+is meant to move between polls, and a series that switched between a five-hour peak
+and a weekly one would be charting two different quantities. Peaks from a different window length are
+never mixed into the same series.
 
 **Models this week** closes each column with every model that ran, busiest first, one bar
 per model, scaled against that provider's busiest. Release-date suffixes are trimmed from
@@ -158,17 +181,21 @@ disabled, and telemetry, error reporting, and automatic updates disabled. It ski
 limits captured output to 4 MB, and stops the process group after completion or a
 25-second deadline. One collector lock prevents overlapping checks across bars.
 
-The native response may contain cached fallback data after a failed provider check.
-The widget therefore verifies it against `cachedUsageUtilization` in Claude's config,
-including its account UUID, capture timestamp, and normalized quota windows. A cached
-response is never dated as a new check. Fresh account-bound local readings avoid
-starting a process at all. Claude account/organization identity controls cache and
-history ownership; switching accounts does not reuse the previous account's quota.
-Older captures without account identity cannot be verified by this path.
+The control request reaches the service on every call, so its reply is a reading
+and is dated when the plugin asked for it. The one documented exception is
+essential-traffic mode, which blocks `/api/oauth/usage` and substitutes a saved
+reply; the subprocess environment is built without any `CLAUDE_*` variable, so the
+setting that triggers it cannot reach the child. Claude Code does not write
+`cachedUsageUtilization` during a `--print` run, so that capture is a cheaper
+source rather than a precondition: a fresh account-bound one avoids starting a
+process at all, and it remains the fallback when the process cannot run. Every
+reply is still checked against the account behind it — Claude account/organization
+identity controls cache and history ownership, and switching accounts does not
+reuse the previous account's quota. Captures without account identity are not read.
 
 The native control interface is experimental. An unsupported CLI version, missing
-executable, failed renewal, timeout, or unverified reading produces an actionable
-message and retains the last verified reading when available. Update Claude Code
+executable, failed renewal, timeout, or unusable reply produces an actionable
+message and retains the last good reading when available. Update Claude Code
 if it cannot answer the structured usage request. The comparison and local proof
 are recorded in [the research notes](docs/claude-usage-research.md).
 
@@ -185,13 +212,13 @@ during collection is held until the current process finishes. Provider retry wai
 are retained and cannot be shortened by manual refresh. Direct HTTP responses honor
 numeric or HTTP-date `Retry-After` values, including waits longer than an hour.
 Claude's control response does not expose every upstream error or retry header;
-when fresh data cannot be verified, retry after at least five minutes or the selected
-interval, whichever is longer. This is reported as an unverified refresh, without
-claiming the failure was necessarily HTTP 429.
+when it cannot answer, retry after at least five minutes or the selected interval,
+whichever is longer. This is reported as a failed refresh, without claiming the
+failure was necessarily HTTP 429.
 
 Failures retain saved usage for at most 24 hours, with its original capture time,
 stale warning, and dimmed fills. Older data is hidden. Missing readings never appear
-as zero usage. A newer verified client capture can still update the column while a
+as zero usage. A newer client capture can still update the column while a
 retry wait is active; reading a file does not clear that wait.
 
 The plugin reads client credentials and config. The native Claude subprocess may

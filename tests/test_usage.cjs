@@ -48,6 +48,115 @@ test('model bars scale against the busiest model and drop what was not observed'
     assert.equal(usage.modelBars(null).length, 0);
 });
 
+// Windows arrive shortest-first, which is the order the rows are drawn in and
+// exactly the wrong order to read a headline from.
+function claudeAccount(session, weekly, scoped) {
+    return {provider: 'claude', status: 'ok', windows: [
+        {id: 'five_hour', label: '5-hour window', used: session, duration: 18000,
+         resetAt: now / 1000 + 17000, severity: 'normal', active: false},
+        {id: 'seven_day', label: '7-day window', used: weekly, duration: 604800,
+         resetAt: now / 1000 + 150000, severity: 'warning', active: false},
+        {id: 'weekly_scoped:fable', label: 'Fable · 7 days', used: scoped, duration: 604800,
+         resetAt: now / 1000 + 150000, severity: 'critical', active: true},
+    ]};
+}
+
+test('the headline window is the fullest one, not the shortest', () => {
+    // A session window that just rolled over is 0% and says nothing about the
+    // weekly quota it sits next to.
+    const rolled = claudeAccount(0, 76, 97);
+    assert.equal(usage.primaryWindow(rolled).id, 'weekly_scoped:fable');
+    assert.equal(usage.primaryUsage(rolled), 97);
+    const burning = claudeAccount(88, 40, 12);
+    assert.equal(usage.primaryWindow(burning).id, 'five_hour',
+        'a session about to run out is the headline too, when it is the fullest');
+    assert.equal(usage.primaryUsage(burning), 88);
+});
+
+test('a provider verdict breaks ties and never outranks a fuller meter', () => {
+    const account = claudeAccount(0, 90, 60);
+    assert.equal(usage.primaryWindow(account).id, 'seven_day',
+        'critical and active must not beat a plainly fuller window');
+    const tied = claudeAccount(0, 60, 60);
+    assert.equal(usage.primaryWindow(tied).id, 'weekly_scoped:fable',
+        "equally full, the service's own flags decide");
+    const flat = {windows: [
+        {id: 'long', used: 50, duration: 604800},
+        {id: 'short', used: 50, duration: 18000},
+    ]};
+    assert.equal(usage.primaryWindow(flat).id, 'short',
+        'with no flags at all, the shorter window binds first');
+});
+
+test('windows without a usable number are skipped, never headlined', () => {
+    const partial = {windows: [{id: 'broken', used: NaN, duration: 18000},
+                               {id: 'real', used: 44, duration: 604800}]};
+    assert.equal(usage.primaryWindow(partial).id, 'real');
+    assert.equal(usage.primaryUsage(partial), 44);
+    // Nothing measurable at all: still name a limit rather than going blank.
+    const unknown = {windows: [{id: 'broken', label: '5-hour window', used: null}]};
+    assert.equal(usage.primaryWindow(unknown).id, 'broken');
+    assert.equal(usage.primaryUsage(unknown), null);
+    assert.equal(usage.primaryWindow({windows: []}), undefined);
+    assert.equal(usage.primaryUsage(null), null);
+});
+
+test('the bar charts the shortest window, whatever the week is doing', () => {
+    // The shape that made this worth separating: an idle session beside a week
+    // that is nearly spent. The panel still headlines the week; the bar does not.
+    const rolled = claudeAccount(0, 76, 97);
+    assert.equal(usage.barWindow(rolled).id, 'five_hour');
+    assert.equal(usage.barUsage(rolled), 0);
+    assert.equal(usage.primaryWindow(rolled).id, 'weekly_scoped:fable',
+        'the limiting window is unchanged by where the bar looks');
+    // Ties on length never happen for Claude, but a provider could report two
+    // weeks and nothing shorter; the first one reported wins and stays put.
+    const weeksOnly = {windows: [
+        {id: 'seven_day', used: 12, duration: 604800},
+        {id: 'weekly_scoped:fable', used: 96, duration: 604800},
+    ]};
+    assert.equal(usage.barWindow(weeksOnly).id, 'seven_day');
+    // A window with no length cannot be the shortest, even when it is the only
+    // one carrying a reading.
+    const unlabelled = {windows: [{id: 'no-duration', used: 44},
+                                  {id: 'week', used: 9, duration: 604800}]};
+    assert.equal(usage.barWindow(unlabelled).id, 'week');
+    // Nothing measurable with a length at all: fall back rather than go blank.
+    const shapeless = {windows: [{id: 'broken', used: 51}]};
+    assert.equal(usage.barWindow(shapeless).id, 'broken');
+    assert.equal(usage.barUsage(shapeless), 51);
+    assert.equal(usage.barWindow({windows: []}), undefined);
+    assert.equal(usage.barUsage(null), null);
+});
+
+test('pace and account choice each follow their own window', () => {
+    // 6% into the session with nothing spent in it: under pace, however close
+    // the week beside it is to its wall.
+    assert.equal(usage.overPace(claudeAccount(0, 76, 97), now), false,
+        'the arrow belongs to the number it sits against');
+    assert.equal(usage.overPace(claudeAccount(88, 2, 1), now), true);
+    const accounts = [claudeAccount(30, 10, 5), claudeAccount(0, 20, 95)];
+    assert.equal(usage.representativeAccount(accounts), accounts[1],
+        'the picker opens on the account closest to a wall, whichever window that is');
+});
+
+test('a provider calling a window critical is enough to earn caution', () => {
+    assert.equal(usage.nearLimit({used: 62, severity: 'critical'}), true);
+    assert.equal(usage.nearLimit({used: 62, severity: 'warning'}), false);
+    assert.equal(usage.nearLimit({used: 91}), true, 'the number alone still earns it');
+    assert.equal(usage.nearLimit({used: NaN, severity: 'critical'}), true);
+    assert.equal(usage.nearLimit(null), false);
+});
+
+test('the daily peak names the window it charts', () => {
+    assert.equal(usage.historyLabel([{value: 3, duration: 18000}]), 'Daily peak · 5-hour');
+    assert.equal(usage.historyLabel([{value: 3, duration: 604800}]), 'Daily peak · 7-day');
+    // A series written before durations were recorded claims nothing it cannot back.
+    assert.equal(usage.historyLabel([{value: 3, window: 'primary'}]), 'Daily peak');
+    assert.equal(usage.historyLabel([]), 'Daily peak');
+    assert.equal(usage.historyLabel(null), 'Daily peak');
+});
+
 test('providers with known usage keep their meters even at zero', () => {
     for (const provider of ['codex', 'claude']) {
         const codex = account('codex', provider === 'codex' ? 37 : 0);
@@ -60,6 +169,10 @@ test('providers with known usage keep their meters even at zero', () => {
         'a pair of known-idle accounts still reports both, at zero');
     assert.equal(usage.barAccounts({windows: []}, {windows: []}).length, 0);
     assert.equal(usage.barAccounts(account('codex', NaN), account('claude', 0)).length, 1);
+    // A provider reporting only a week still gets a bar; there is no shorter
+    // window to insist on.
+    assert.equal(usage.barAccounts({provider: 'codex', status: 'ok',
+        windows: [{id: 'primary_window', used: 64, duration: 604800}]}, {windows: []}).length, 1);
 });
 
 test('percentages stay honest at both ends of the scale', () => {

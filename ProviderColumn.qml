@@ -197,9 +197,13 @@ Column {
             readonly property var pacing: root.showPacing ? Usage.pace(modelData, root.now) : null
             readonly property bool overPace: pacing !== null && pacing.delta >= 2
             readonly property bool known: typeof modelData.used === "number" && isFinite(modelData.used)
+            // The one the pill reports. Identity, not index: the rows stay in
+            // window-length order so they never reshuffle under the pointer.
+            readonly property bool limiting: modelData === Usage.primaryWindow(root.account)
             width: root.width
             spacing: 3
             Accessible.name: modelData.label + ": " + Usage.percent(modelData) + " used"
+                + (limiting ? ", the limit closest to being reached" : "")
                 + (pacing ? ", " + pacing.text : "") + ", " + Usage.countdown(modelData.resetAt, root.now)
             HoverHandler { id: limitHover }
             UsageTooltip {
@@ -299,9 +303,12 @@ Column {
         spacing: 4
         visible: (root.account.history || []).length > 0
         StyledText {
-            text: "Daily peak"
+            objectName: "dailyPeakTitle-" + root.provider
+            width: parent.width
+            text: Usage.historyLabel(root.account.history)
             color: Theme.surfaceVariantText
             font.pixelSize: Math.round(Theme.fontScale * 10.5)
+            elide: Text.ElideRight
         }
         Row {
             id: week
