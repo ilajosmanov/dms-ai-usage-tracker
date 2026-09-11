@@ -2,7 +2,7 @@
   "id": "aiUsage",
   "name": "Subscription Usage Meter",
   "description": "Account-wide Codex and Claude subscription usage in one segmented bar meter.",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "author": "ilajosmanov",
   "icon": "monitoring",
   "type": "widget",

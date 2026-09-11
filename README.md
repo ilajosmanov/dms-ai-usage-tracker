@@ -3,7 +3,7 @@
 Account-wide Codex and Claude subscription usage in one native, theme-aware DankBar
 widget for [Dank Material Shell](https://danklinux.com).
 
-![Both providers side by side in the popout: plan, quota windows, pacing, daily peak, and models this week](docs/screenshot.png)
+![The bar pill above the popout it opens: both providers side by side with plan, quota windows, pacing, daily peak, and models this week](docs/screenshot.png)
 
 The bar carries one small vertical meter per subscription. Click it for a popout that
 puts both providers side by side with the quota windows each one actually reports,
@@ -288,6 +288,12 @@ dashboard state is grabbed at its own natural height, so the screenshots also me
 the panel. Tooltip size and placement are asserted from a stubbed pointer instead:
 a popup renders in the window overlay, which no screenshot of the panel can reach. It runs entirely on `--demo` data in an
 isolated config, and its output under `screenshots/` is an untracked test artifact.
+`scripts/capture.py` renders `docs/screenshot.png`, the image the plugin registry
+builds its preview card from: the bar pill above the popout it opens, on the stock
+dank theme. It runs the collector without `--demo`, so the result carries real
+percentages and token totals — look at it before committing one. The card overlays
+the plugin's own name, so regenerate it whenever the bar or the popout changes.
+
 Set `DMS_QML_ROOT` if DMS is installed somewhere other than `/usr/share/quickshell/dms`.
 
 DMS can cache child QML components during plugin reloads. Restart DMS after updating
