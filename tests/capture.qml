@@ -13,6 +13,16 @@ ShellRoot {
     property var data: ({accounts: []})
     property bool ready: false
 
+    // Supply the same public surface geometry used by PluginPopout, so this
+    // standalone capture includes the actual outer outline and shell padding.
+    QtObject {
+        id: previewSurface
+        readonly property var contentLoader: popout
+        readonly property bool useConnectedBackend: false
+        readonly property int effectiveBarPosition: 1
+        readonly property vector4d surfaceCornerRadii: Qt.vector4d(popout.radius, popout.radius, popout.radius, popout.radius)
+    }
+
     Process {
         command: ["python3", decodeURIComponent(Qt.resolvedUrl("Plugin/get-ai-usage").toString().replace("file://", ""))]
         running: true
@@ -63,12 +73,16 @@ ShellRoot {
                 anchors.top: bar.bottom
                 anchors.topMargin: 14
                 anchors.horizontalCenter: parent.horizontalCenter
-                width: dashboard.width
-                height: Math.ceil(dashboard.implicitHeight)
-                radius: 20
-                color: Theme.surfaceContainer
+                width: parent.width
+                height: Math.ceil(dashboard.implicitHeight + PopoutMetrics.contentPadding * 2)
+                radius: Theme.windowRadius
+                color: Theme.readableSurface
                 UsageDashboard {
                     id: dashboard
+                    x: PopoutMetrics.contentPadding
+                    y: PopoutMetrics.contentPadding
+                    width: parent.width - PopoutMetrics.contentPadding * 2
+                    parentPopout: previewSurface
                     snapshot: capture.data
                     primaryProvider: "codex"
                     maxBodyHeight: 1000
