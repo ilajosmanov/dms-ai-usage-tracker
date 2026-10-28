@@ -20,8 +20,8 @@ Column {
     // Column order only; both providers are always on screen.
     readonly property var providers: Usage.orderedProviders(primaryProvider)
     readonly property real columnWidth: (width - padding * 2 - columns.spacing) / 2
-    padding: 12
-    spacing: 12
+    padding: Theme.spacingM
+    spacing: Theme.spacingM
     width: 424
 
     PopoutOutline { popout: root.parentPopout }
@@ -30,54 +30,52 @@ Column {
         id: header
         objectName: "usageHeader"
         width: parent.width - root.padding * 2
-        height: 26
+        height: Math.max(Theme.spacingXL, headerActions.implicitHeight)
         StyledText {
             anchors.left: parent.left
-            // The actions keep their natural width; the title is what gives way,
-            // so a large font scale can never push "Updated" off the header.
             anchors.right: headerActions.left
-            anchors.rightMargin: 8
+            anchors.rightMargin: Theme.spacingS
             anchors.verticalCenter: parent.verticalCenter
             elide: Text.ElideRight
             text: root.snapshot.demo ? "Subscription Usage Meter · Demo" : "Subscription Usage Meter"
             color: Theme.surfaceText
-            font.pixelSize: Math.round(Theme.fontScale * 14)
+            font.pixelSize: Theme.fontSizeMedium
             font.weight: Font.Medium
         }
         Row {
             id: headerActions
             anchors.right: parent.right
             anchors.verticalCenter: parent.verticalCenter
-            spacing: 4
+            spacing: Theme.spacingXS
             StyledText {
                 objectName: "updatedLabel"
                 anchors.verticalCenter: parent.verticalCenter
-                rightPadding: 4
+                rightPadding: Theme.spacingXS
                 text: root.loading ? "Checking…" : Usage.age(Usage.latestUpdate(root.snapshot), root.now)
                 color: Theme.surfaceVariantText
-                font.pixelSize: Math.round(Theme.fontScale * 11)
+                font.pixelSize: Theme.fontSizeSmall
             }
-            ToolButton {
+            DActionButton {
                 objectName: "refreshButton"
-                padding: 0
-                width: 24; height: 24
+                width: Theme.spacingXL; height: Theme.spacingXL
                 anchors.verticalCenter: parent.verticalCenter
                 enabled: !root.loading
                 Accessible.name: "Refresh usage"
-                UsageTooltip { visible: parent.hovered; text: "Refresh usage" }
-                background: Rectangle { radius: 12; color: parent.hovered ? Theme.surfaceContainerHigh : "transparent" }
-                contentItem: DIcon { name: "refresh"; size: 15; color: root.loading ? Theme.surfaceVariantText : Theme.surfaceText }
+                tooltipText: "Refresh usage"
+                iconName: "refresh"
+                iconSize: Theme.fontSizeLarge
+                iconColor: Theme.surfaceText
                 onClicked: root.refreshRequested()
             }
-            ToolButton {
+            DActionButton {
                 objectName: "closeButton"
-                padding: 0
-                width: 24; height: 24
+                width: Theme.spacingXL; height: Theme.spacingXL
                 anchors.verticalCenter: parent.verticalCenter
                 Accessible.name: "Close usage"
-                UsageTooltip { visible: parent.hovered; text: "Close" }
-                background: Rectangle { radius: 12; color: parent.hovered ? Theme.surfaceContainerHigh : "transparent" }
-                contentItem: DIcon { name: "close"; size: 15; color: Theme.surfaceText }
+                tooltipText: "Close"
+                iconName: "close"
+                iconSize: Theme.fontSizeLarge
+                iconColor: Theme.surfaceText
                 onClicked: { if (root.closePopout) root.closePopout(); }
             }
         }
@@ -86,17 +84,17 @@ Column {
     Rectangle {
         objectName: "collectorErrorCard"
         width: parent.width - root.padding * 2
-        implicitHeight: collectorErrorText.implicitHeight + 20
+        implicitHeight: collectorErrorText.implicitHeight + Theme.spacingS * 2
         radius: Theme.cornerRadius
         color: Theme.surfaceContainerHigh
         visible: root.collectorError !== ""
         StyledText {
             id: collectorErrorText
-            x: 10; y: 10; width: parent.width - 20
+            x: Theme.spacingS; y: Theme.spacingS; width: parent.width - Theme.spacingS * 2
             textFormat: Text.PlainText
             text: root.collectorError
             color: Theme.surfaceText
-            font.pixelSize: Math.round(Theme.fontScale * 11)
+            font.pixelSize: Theme.fontSizeSmall
             wrapMode: Text.Wrap
         }
     }
@@ -119,7 +117,7 @@ Column {
         Row {
             id: columns
             width: scroll.width
-            spacing: 14
+            spacing: Theme.spacingL
             Repeater {
                 model: root.providers
                 ProviderColumn {
@@ -147,7 +145,7 @@ Column {
         text: Usage.sharedNote(root.snapshot) || "Account-wide usage per subscription."
         visible: text !== ""
         color: Theme.surfaceVariantText
-        font.pixelSize: Math.round(Theme.fontScale * 10.5)
+        font.pixelSize: Theme.fontSizeSmall
         wrapMode: Text.Wrap
     }
 }

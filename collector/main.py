@@ -264,15 +264,36 @@ def finalize(accounts):
 
 def cached_snapshot(cache_path, now):
     """Another collector holds the refresh lock; report its last result instead of queueing."""
-    stored = read_json(cache_path).get("accounts", {})
+    stored = cached_accounts(cache_path)
     return {"version": 1, "checkedAt": now, "accounts": finalize(
         [public(a) for a in stored.values() if isinstance(a, dict) and a.get("provider") in PROVIDERS])}
+
+
+def cached_accounts(path):
+    """Ignore malformed cache entries instead of breaking all provider collection."""
+    stored = read_json(path).get("accounts", {})
+    if not isinstance(stored, dict):
+        return {}
+    valid = {}
+    for uid, account in stored.items():
+        if not isinstance(account, dict) or account.get("provider") not in PROVIDERS:
+            continue
+        if any(not isinstance(account.get(field, []), list) or any(
+                not isinstance(item, dict) for item in account.get(field, []))
+               for field in ("windows", "history")):
+            continue
+        if any(field in account and not (field == "updatedAt" and account[field] is None)
+               and (not isinstance(account[field], (int, float)) or number(account[field]) is None)
+               for field in ("updatedAt", "lastAttempt", "nextAttempt", "retryNotBefore")):
+            continue
+        valid[uid] = account
+    return valid
 
 
 def collect(config, cache_path, offline=False, force=False, home=None):
     now = time.time()
     groups = discover(config, home)
-    cache = read_json(cache_path).get("accounts", {})
+    cache = cached_accounts(cache_path)
     accounts = []
     key = fingerprint_key(cache_path.parent)
     interval = max(120, min(1800, (number(config.get("refreshInterval")) or 2) * 60))

@@ -78,11 +78,9 @@ Where a provider grades its own windows, `critical` earns the caution color on i
 and its `severity`/`active` flags break ties between two equally full windows —
 they never outrank a plainly fuller meter. The popout still lists every window in
 window-length order, so the rows never reshuffle under the pointer. Provider
-color is the one thing here that does not follow your Material You palette, and the
-fills are the exact brand hex in light and dark themes, so a meter always reads as its
-own subscription. Brand-colored *text* darkens on a light surface, because the brand
-hex itself falls under the 4.5:1 contrast floor there. Idle providers keep their empty
-bar and 0% label, even when the other provider is active; unknown
+colors remain Codex green and Claude orange across themes. Text uses darker variants
+on light backgrounds for contrast.
+Idle providers keep their empty bar and 0% label, even when the other provider is active; unknown
 usage shows a dash, and a provider with no usable window drops out of the bar entirely.
 
 Each active provider gets its own upward arrow when at least two percentage points
@@ -104,14 +102,14 @@ rather than a section. Multiple accounts for one provider get a native DMS selec
 that provider's column, opening on its highest-utilization account; manual selections
 persist through refreshes and do not disturb the other column.
 
-Every limit is one row: window, percentage, a track whose fill is the brand color, and a
+Every limit is one row: window, percentage, a track filled with the provider's brand color, and a
 notch marking where even consumption would have put you. Under it sit the pace verdict
-and the bare countdown. The percentage is brand-tinted until the window is at least 90%
+and the bare countdown. The percentage uses the same accent until the window is at least 90%
 consumed, when it turns to the theme's caution color — over pace and nearly out are
 separate signals, and both can be true. Row labels drop their "window" suffix to fit the
 column; the unshortened label and the spelled-out reset time are in the row's tooltip,
-which opens at the cursor rather than at the middle of the row and flips to the other
-side when the popout edge is close. The accessible name carries all of it. The header keeps the update time, refresh, and close visible
+which uses the native Dux tooltip beside the cursor and stays inside the window.
+The accessible name carries all of it. The header keeps the update time, refresh, and close visible
 while scrolling, and reports the newest column that is actually live; a column
 serving saved usage dates itself instead, so one backed-off provider cannot make a
 refresh that did work read as one that did nothing.
@@ -125,7 +123,7 @@ Anthropic's undocumented Nimbus Quill placeholder are intentionally hidden; real
 model-scoped Claude limits such as Fable remain visible.
 
 Each column's seven-day strip records daily peak utilization observed by this widget,
-today's bar at full brand strength. Unsampled days are missing, not zero. It is a quota
+today's bar at full accent strength. Unsampled days are missing, not zero. It is a quota
 chart, not a spend chart, and each day's date and peak are in its tooltip.
 
 The strip follows one window for its whole life — the shortest one the provider
@@ -201,11 +199,11 @@ are recorded in [the research notes](docs/claude-usage-research.md).
 
 ## Refresh and privacy
 
-Local credentials and usage are checked every thirty seconds. Normal collection
-follows the configured 2–30 minute interval for Codex and **5–30 minutes for Claude**.
-Claude's minimum matches the cadence at which it persists its usage cache. Fresh
-local data can update either column between collection attempts. The cache is
-rewritten only when something changed.
+Local credentials, session logs, and cached usage are read at the configured
+**2–30 minute interval**. Countdowns update once a minute without starting a collector
+process. Codex API requests follow the same collection interval; Claude requests
+are at least five minutes apart. Fresh client readings are used on the next
+collection. The cache is rewritten only when something changed.
 
 Manual refresh bypasses the normal interval with a five-second cooldown. A click
 during collection is held until the current process finishes. Provider retry waits
@@ -238,8 +236,11 @@ never published to QML.
 Session logs are read incrementally. A file already scanned is re-read only from the byte
 where the previous scan stopped, and Codex, which reports a running session total, is read
 from its head and tail alone; a first scan of a long history is spread over the next few
-polls rather than blocking one. The scan reads token counts and model ids. It never reads
-message content, and its bookkeeping stays in
+polls rather than blocking one. Each store has a 96 MiB read budget per collection;
+records larger than 2 MiB are skipped, and unfinished scans resume on the next collection.
+The Codex model lookup stops at 2 MiB, and its usage lookup reads the last 256 KiB.
+The scan parses log records to extract token counts and model ids; it does not store
+message content. Its bookkeeping stays in
 `$XDG_CACHE_HOME/dms-ai-usage/activity.json` (mode 0600).
 
 Only usage metadata, model names with their local token totals, opaque identity hashes,
@@ -278,9 +279,8 @@ Optional `--config /path/to/settings.json` accepts plugin settings, for example
 `~/.config/dms/plugin_settings.json` under `aiUsage` (honoring `XDG_CONFIG_HOME`).
 The collector and development installer also recognize the legacy
 `DankMaterialShell` directory when the `dms` directory does not exist.
-The interval bounds API polling only; a client that is running keeps the columns
-current between those checks at no cost, so a longer
-interval is usually the better setting.
+The interval controls all automatic collection, including local session scanning.
+Use Refresh to check a new login or client reading immediately.
 
 `scripts/preview.py` renders fourteen QML states offscreen against installed DMS
 components: both columns side by side, per-column dashboard links, per-provider

@@ -14,30 +14,24 @@ Item {
     readonly property var claude: Usage.representativeAccount(Usage.providerAccounts(snapshot, "claude")) || {windows: [], status: "missing"}
     readonly property var meters: Usage.barAccounts(codex, claude)
     readonly property int overPaceCount: showPacing && !failed ? meters.filter(function(a) { return Usage.overPace(a, root.now); }).length : 0
-    implicitWidth: vertical ? Math.max(28, values.implicitWidth) : bars.width + 7 + values.implicitWidth
-    implicitHeight: vertical ? bars.height + 4 + values.implicitHeight : Math.max(bars.height, values.implicitHeight)
+    implicitWidth: vertical ? Math.max(28, values.implicitWidth) : bars.width + Theme.spacingS + values.implicitWidth
+    implicitHeight: vertical ? bars.height + Theme.spacingXS + values.implicitHeight : Math.max(bars.height, values.implicitHeight)
     Accessible.name: "Subscription Usage Meter"
     Accessible.description: detail(codex, "Codex") + "; " + detail(claude, "Claude") + ". Each column is one subscription's own quota, not a shared total."
 
-    // One number per provider, so it has to be named: "5% used" and "5% of the
-    // five-hour session" are different claims and only the second one is
-    // actionable. The full set of windows stays one click away in the popout.
     function detail(account, name) {
         var primary = Usage.barWindow(account);
         if (!primary) return name + ": " + (account.status === "auth" ? "sign-in needed" : "not connected");
         return name + ": " + Usage.percent(primary) + " used · " + primary.label + (root.failed || account.status === "stale" ? " (saved usage)" : "");
     }
 
-    // Twin verticals: one 4px column per provider with known usage, filled from the
-    // bottom. Height is the shape of the quota, so the pill reads before the
-    // digits do.
     Row {
         id: bars
         objectName: "usageBars"
         x: root.vertical ? (root.width - width) / 2 : 0
         y: root.vertical ? 0 : (root.height - height) / 2
-        height: 16
-        spacing: 3
+        height: Theme.spacingL
+        spacing: Theme.spacingXXS
         Repeater {
             model: root.meters
             Rectangle {
@@ -46,9 +40,9 @@ Item {
                 readonly property var window: Usage.barWindow(modelData)
                 readonly property bool known: window && typeof window.used === "number" && isFinite(window.used)
                 objectName: "usageBar-" + modelData.provider
-                width: 4
+                width: Theme.spacingXS
                 height: bars.height
-                radius: 2
+                radius: Theme.cornerRadiusXXS
                 color: Theme.withAlpha(Theme.surfaceText, 0.12)
                 Rectangle {
                     objectName: "usageBarFill-" + barTrack.modelData.provider
@@ -64,19 +58,19 @@ Item {
         }
         Rectangle {
             visible: root.meters.length === 0
-            width: 4
+            width: Theme.spacingXS
             height: bars.height
-            radius: 2
+            radius: Theme.cornerRadiusXXS
             color: Theme.withAlpha(Theme.surfaceText, 0.12)
         }
     }
     Grid {
         id: values
-        x: root.vertical ? (root.width - width) / 2 : bars.width + 7
-        y: root.vertical ? bars.height + 4 : (root.height - height) / 2
+        x: root.vertical ? (root.width - width) / 2 : bars.width + Theme.spacingS
+        y: root.vertical ? bars.height + Theme.spacingXS : (root.height - height) / 2
         columns: root.vertical ? 1 : Math.max(1, root.meters.length)
-        columnSpacing: 8
-        rowSpacing: 2
+        columnSpacing: Theme.spacingS
+        rowSpacing: Theme.spacingXXS
         Repeater {
             model: root.meters
             Row {
@@ -85,8 +79,6 @@ Item {
                 readonly property color accent: Usage.accentText(modelData.provider, Theme.isLightMode)
                 readonly property bool overPace: root.showPacing && !root.failed && Usage.overPace(modelData, root.now)
                 spacing: 0
-                // Stacked in a vertical bar the arrow trails the number, so the
-                // digits of both providers still start on the same pixel.
                 LayoutMirroring.enabled: root.vertical
                 opacity: root.failed || modelData.status === "stale" ? 0.55 : 1
                 DIcon {
@@ -101,7 +93,7 @@ Item {
                     objectName: "barPercent-" + meter.modelData.provider
                     text: Usage.percent(Usage.barWindow(meter.modelData))
                     color: meter.accent
-                    font.pixelSize: root.vertical ? Math.round(Theme.fontScale * 11) : Theme.fontSizeSmall
+                    font.pixelSize: Theme.fontSizeSmall
                     font.weight: Font.Medium
                 }
             }

@@ -1,12 +1,8 @@
 import QtQuick
-import QtQuick.Controls
 import qs.Common
 import qs.DCommon.Widgets
 import "Usage.js" as Usage
 
-// One provider owns one column: its plan, its limits, its week and its models.
-// Nothing in here is shared with the other provider, because the two
-// subscriptions are separate allowances and must never read as one pool.
 Column {
     id: root
     property string provider: "codex"
@@ -24,8 +20,6 @@ Column {
     readonly property var models: Usage.modelBars(account)
     readonly property bool stale: degraded || account.status === "stale"
     readonly property string originNote: Usage.originNote(account, now)
-    // With a single client, the label and the attribution are the same words. The
-    // attribution carries the age too, so it is the one worth a line.
     readonly property bool labelRepeatsOrigin: originNote !== ""
         && Usage.clientLabel(account.label) === account.origin
     readonly property string retryNote: Usage.retryNote(account.retryAt, now)
@@ -34,20 +28,20 @@ Column {
     readonly property color cautionColor: Theme.isLightMode ? Qt.darker(Theme.warning, 1.8) : Theme.warning
     readonly property color hairline: Theme.withAlpha(Theme.surfaceText, 0.12)
     readonly property color trackColor: Theme.withAlpha(Theme.surfaceText, 0.1)
-    spacing: 9
+    spacing: Theme.spacingS
 
     Item {
         objectName: "columnHeader-" + root.provider
         width: parent.width
-        height: 20
+        height: Theme.spacingXL
         Row {
             anchors.left: parent.left
             anchors.verticalCenter: parent.verticalCenter
-            width: parent.width - 26
-            spacing: 6
+            width: parent.width - Theme.spacingXL - Theme.spacingXS
+            spacing: Theme.spacingS
             Rectangle {
                 anchors.verticalCenter: parent.verticalCenter
-                width: 7; height: 7; radius: 4
+                width: Theme.spacingS; height: Theme.spacingS; radius: Theme.cornerRadiusFull
                 color: root.accent
                 opacity: root.stale ? 0.5 : 1
             }
@@ -57,7 +51,7 @@ Column {
                 textFormat: Text.PlainText
                 text: root.account.name || Usage.brandLabel(root.provider)
                 color: Theme.surfaceText
-                font.pixelSize: Math.round(Theme.fontScale * 14)
+                font.pixelSize: Theme.fontSizeMedium
                 font.weight: Font.Medium
             }
             StyledText {
@@ -67,23 +61,19 @@ Column {
                 textFormat: Text.PlainText
                 text: Usage.shortPlan(root.account.plan, root.account.name)
                 color: Theme.surfaceVariantText
-                font.pixelSize: Math.round(Theme.fontScale * 11)
+                font.pixelSize: Theme.fontSizeSmall
                 elide: Text.ElideRight
             }
         }
-        ToolButton {
+        DActionButton {
             objectName: "dashboardButton-" + root.provider
-            padding: 0
             anchors.right: parent.right
             anchors.verticalCenter: parent.verticalCenter
-            width: 22; height: 22
+            width: Theme.spacingXL; height: Theme.spacingXL
             Accessible.name: "Open the " + Usage.brandLabel(root.provider) + " usage dashboard"
-            UsageTooltip { visible: parent.hovered; text: "Open " + Usage.brandLabel(root.provider) + " dashboard" }
-            background: Rectangle {
-                radius: 10
-                color: parent.hovered ? Theme.surfaceContainerHigh : "transparent"
-            }
-            contentItem: DIcon { name: "open_in_new"; size: 14; color: parent.hovered ? Theme.surfaceText : Theme.surfaceVariantText }
+            tooltipText: "Open " + Usage.brandLabel(root.provider) + " dashboard"
+            iconName: "open_in_new"
+            iconSize: Theme.fontSizeMedium
             onClicked: root.dashboardRequested(Usage.dashboardUrl(root.provider))
         }
     }
@@ -102,24 +92,20 @@ Column {
         // The selector already names the account, so don't print it twice.
         visible: text !== "" && root.accounts.length < 2 && !root.labelRepeatsOrigin
         color: Theme.surfaceVariantText
-        font.pixelSize: Math.round(Theme.fontScale * 11)
+        font.pixelSize: Theme.fontSizeSmall
         wrapMode: Text.Wrap
         maximumLineCount: 2
         elide: Text.ElideRight
     }
 
-    // A number read from a client's own state is still that client's reading, and
-    // the panel says so rather than passing it off as a check of its own.
     StyledText {
         objectName: "originNote-" + root.provider
         width: parent.width
         textFormat: Text.PlainText
         text: root.originNote
-        // When the column is not live the status card already dates and attributes
-        // the reading; saying it twice in 185px is worse than saying it once.
         visible: text !== "" && root.account.status === "ok"
         color: Theme.surfaceVariantText
-        font.pixelSize: Math.round(Theme.fontScale * 11)
+        font.pixelSize: Theme.fontSizeSmall
         elide: Text.ElideRight
     }
 
@@ -138,20 +124,17 @@ Column {
         }
     }
 
-    // The only filled surface in the panel, so a fill means "needs attention"
-    // instead of meaning "section". Per column, because Codex can be signed in
-    // while Claude is not.
     Rectangle {
         objectName: "statusCard-" + root.provider
         width: parent.width
-        implicitHeight: statusColumn.implicitHeight + 20
+        implicitHeight: statusColumn.implicitHeight + Theme.spacingS * 2
         radius: Theme.cornerRadius
         color: Theme.surfaceContainerHigh
         visible: root.account.status !== "ok"
         Column {
             id: statusColumn
-            x: 10; y: 10; width: parent.width - 20
-            spacing: 3
+            x: Theme.spacingS; y: Theme.spacingS; width: parent.width - Theme.spacingS * 2
+            spacing: Theme.spacingXXS
             StyledText {
                 objectName: "statusTitle-" + root.provider
                 width: parent.width
@@ -161,7 +144,7 @@ Column {
                     : root.account.status === "loading" ? "Checking…"
                     : "Usage unavailable"
                 color: Theme.surfaceText
-                font.pixelSize: Math.round(Theme.fontScale * 12)
+                font.pixelSize: Theme.fontSizeSmall
                 font.weight: Font.Medium
                 wrapMode: Text.Wrap
             }
@@ -171,7 +154,7 @@ Column {
                 text: root.account.message || ""
                 visible: text !== ""
                 color: Theme.surfaceVariantText
-                font.pixelSize: Math.round(Theme.fontScale * 11)
+                font.pixelSize: Theme.fontSizeSmall
                 wrapMode: Text.Wrap
             }
             StyledText {
@@ -181,7 +164,7 @@ Column {
                 text: root.retryNote
                 visible: text !== ""
                 color: Theme.surfaceVariantText
-                font.pixelSize: Math.round(Theme.fontScale * 11)
+                font.pixelSize: Theme.fontSizeSmall
                 wrapMode: Text.Wrap
             }
         }
@@ -197,11 +180,9 @@ Column {
             readonly property var pacing: root.showPacing ? Usage.pace(modelData, root.now) : null
             readonly property bool overPace: pacing !== null && pacing.delta >= 2
             readonly property bool known: typeof modelData.used === "number" && isFinite(modelData.used)
-            // The one the pill reports. Identity, not index: the rows stay in
-            // window-length order so they never reshuffle under the pointer.
             readonly property bool limiting: modelData === Usage.primaryWindow(root.account)
             width: root.width
-            spacing: 3
+            spacing: Theme.spacingXXS
             Accessible.name: modelData.label + ": " + Usage.percent(modelData) + " used"
                 + (limiting ? ", the limit closest to being reached" : "")
                 + (pacing ? ", " + pacing.text : "") + ", " + Usage.countdown(modelData.resetAt, root.now)
@@ -210,8 +191,6 @@ Column {
                 objectName: "limitTooltip-" + root.provider + "-" + limit.index
                 pointer: limitHover
                 visible: limitHover.hovered
-                // Only what the row could not say: the unshortened label, and
-                // the reset spelled out. The pace verdict is already on screen.
                 text: limit.modelData.label + "\n" + Usage.percent(limit.modelData)
                     + " used · " + Usage.countdown(limit.modelData.resetAt, root.now)
             }
@@ -220,11 +199,11 @@ Column {
                 width: parent.width
                 height: limitPercent.implicitHeight
                 StyledText {
-                    width: Math.max(0, parent.width - limitPercent.implicitWidth - 6)
+                    width: Math.max(0, parent.width - limitPercent.implicitWidth - Theme.spacingS)
                     textFormat: Text.PlainText
                     text: Usage.shortWindow(limit.modelData.label)
                     color: Theme.surfaceText
-                    font.pixelSize: Math.round(Theme.fontScale * 12)
+                    font.pixelSize: Theme.fontSizeSmall
                     elide: Text.ElideRight
                 }
                 StyledText {
@@ -234,15 +213,15 @@ Column {
                     text: Usage.percent(limit.modelData)
                     // Brand tint says whose limit this is; caution says it is nearly gone.
                     color: Usage.nearLimit(limit.modelData) ? root.cautionColor : root.accentText
-                    font.pixelSize: Math.round(Theme.fontScale * 13)
+                    font.pixelSize: Theme.fontSizeMedium
                     font.weight: Font.Medium
                 }
             }
 
             Rectangle {
                 width: parent.width
-                height: 5
-                radius: 2.5
+                height: Theme.spacingXS
+                radius: Theme.cornerRadiusFull
                 color: root.trackColor
                 Rectangle {
                     objectName: "limitFill-" + root.provider + "-" + limit.index
@@ -271,11 +250,11 @@ Column {
                 height: limitReset.implicitHeight
                 StyledText {
                     objectName: "limitPace-" + root.provider + "-" + limit.index
-                    width: Math.max(0, parent.width - limitReset.implicitWidth - 6)
+                    width: Math.max(0, parent.width - limitReset.implicitWidth - Theme.spacingS)
                     visible: limit.pacing !== null
                     text: limit.pacing ? limit.pacing.text : ""
                     color: limit.overPace ? root.cautionColor : Theme.surfaceVariantText
-                    font.pixelSize: Math.round(Theme.fontScale * 10.5)
+                    font.pixelSize: Theme.fontSizeSmall
                     elide: Text.ElideRight
                 }
                 StyledText {
@@ -283,7 +262,7 @@ Column {
                     anchors.right: parent.right
                     text: Usage.resetShort(limit.modelData.resetAt, root.now)
                     color: Theme.surfaceVariantText
-                    font.pixelSize: Math.round(Theme.fontScale * 10.5)
+                    font.pixelSize: Theme.fontSizeSmall
                 }
             }
         }
@@ -294,27 +273,27 @@ Column {
         visible: root.windows.length === 0 && root.account.status === "ok"
         text: "No limits reported"
         color: Theme.surfaceVariantText
-        font.pixelSize: Math.round(Theme.fontScale * 11)
+        font.pixelSize: Theme.fontSizeSmall
     }
 
     Column {
         objectName: "weekBlock-" + root.provider
         width: parent.width
-        spacing: 4
+        spacing: Theme.spacingXS
         visible: (root.account.history || []).length > 0
         StyledText {
             objectName: "dailyPeakTitle-" + root.provider
             width: parent.width
             text: Usage.historyLabel(root.account.history)
             color: Theme.surfaceVariantText
-            font.pixelSize: Math.round(Theme.fontScale * 10.5)
+            font.pixelSize: Theme.fontSizeSmall
             elide: Text.ElideRight
         }
         Row {
             id: week
             width: parent.width
-            height: 22
-            spacing: 2
+            height: Theme.spacingXL
+            spacing: Theme.spacingXXS
             readonly property var days: Usage.days(root.account.history, root.now)
             readonly property real cell: (width - spacing * 6) / 7
             Repeater {
@@ -328,9 +307,6 @@ Column {
                     height: week.height
                     Accessible.name: Usage.dayTooltip(day.modelData)
                     HoverHandler { id: dayHover }
-                    // Sibling of the handler, not a child of the bar: the
-                    // tooltip's coordinates have to match the ones the handler
-                    // reports, and the bar is bottom-anchored.
                     UsageTooltip {
                         objectName: "dailyPeakTooltip-" + root.provider + "-" + day.index
                         pointer: dayHover
@@ -343,7 +319,7 @@ Column {
                         width: parent.width
                         height: day.modelData.value === null ? 2
                             : Math.max(2, parent.height * Math.min(1, Math.max(0, day.modelData.value) / 100))
-                        radius: 2
+                        radius: Theme.cornerRadiusXXS
                         color: day.modelData.value === null ? Theme.withAlpha(Theme.surfaceText, 0.08)
                             : day.index === 6 ? root.accent : Theme.withAlpha(root.accent, 0.34)
                     }
@@ -352,7 +328,7 @@ Column {
         }
         Row {
             width: parent.width
-            spacing: 2
+            spacing: Theme.spacingXXS
             Repeater {
                 model: week.days
                 StyledText {
@@ -361,7 +337,7 @@ Column {
                     text: modelData.label
                     color: Theme.surfaceVariantText
                     horizontalAlignment: Text.AlignHCenter
-                    font.pixelSize: Math.round(Theme.fontScale * 9.5)
+                    font.pixelSize: Theme.fontSizeSmall
                 }
             }
         }
@@ -370,12 +346,12 @@ Column {
     Column {
         objectName: "modelsBlock-" + root.provider
         width: parent.width
-        spacing: 4
+        spacing: Theme.spacingXS
         visible: root.models.length > 0
         StyledText {
             text: "Models this week"
             color: Theme.surfaceVariantText
-            font.pixelSize: Math.round(Theme.fontScale * 10.5)
+            font.pixelSize: Theme.fontSizeSmall
         }
         Repeater {
             model: root.models
@@ -385,7 +361,7 @@ Column {
                 required property int index
                 objectName: "modelBar-" + root.provider + "-" + index
                 width: root.width
-                spacing: 2
+                spacing: Theme.spacingXXS
                 HoverHandler { id: modelHover }
                 UsageTooltip {
                     pointer: modelHover
@@ -397,11 +373,11 @@ Column {
                     height: modelTokens.implicitHeight
                     StyledText {
                         objectName: "modelName-" + root.provider + "-" + modelRow.index
-                        width: Math.max(0, parent.width - modelTokens.implicitWidth - 6)
+                        width: Math.max(0, parent.width - modelTokens.implicitWidth - Theme.spacingS)
                         textFormat: Text.PlainText
                         text: Usage.modelLabel(modelRow.modelData.name)
                         color: Theme.surfaceText
-                        font.pixelSize: Math.round(Theme.fontScale * 11)
+                        font.pixelSize: Theme.fontSizeSmall
                         elide: Text.ElideRight
                     }
                     StyledText {
@@ -411,14 +387,14 @@ Column {
                         textFormat: Text.PlainText
                         text: modelRow.modelData.label
                         color: Theme.surfaceVariantText
-                        font.pixelSize: Math.round(Theme.fontScale * 11)
+                        font.pixelSize: Theme.fontSizeSmall
                         font.weight: Font.Medium
                     }
                 }
                 Rectangle {
                     width: parent.width
-                    height: 3
-                    radius: 1.5
+                    height: Theme.spacingXXS
+                    radius: Theme.cornerRadiusFull
                     color: root.trackColor
                     Rectangle {
                         objectName: "modelBarFill-" + root.provider + "-" + modelRow.index

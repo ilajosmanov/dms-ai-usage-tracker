@@ -16,6 +16,15 @@ test('provider accents always use their brand colors', () => {
     assert.equal(usage.accent('unknown'), '#10A37F', 'an unknown provider still gets a stable color');
 });
 
+test('collection honors refresh settings with the collector interval bounds', () => {
+    for (const value of [undefined, null, '', 'invalid', NaN, Infinity, -1, 0, 1, 2])
+        assert.equal(usage.refreshIntervalMs(value), 120000);
+    assert.equal(usage.refreshIntervalMs(5), 300000);
+    assert.equal(usage.refreshIntervalMs('10'), 600000);
+    assert.equal(usage.refreshIntervalMs(30), 1800000);
+    assert.equal(usage.refreshIntervalMs(60), 1800000);
+});
+
 test('daily bars report their peak, and nothing they did not sample', () => {
     const date = usage.days([], now)[6].date;
     const days = usage.days([{date, value: 42}], now);

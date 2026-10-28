@@ -3,6 +3,7 @@ import Quickshell
 import Quickshell.Io
 import qs.Common
 import qs.Modules.Plugins
+import "Usage.js" as Usage
 
 PluginComponent {
     id: root
@@ -15,12 +16,12 @@ PluginComponent {
     property real now: Date.now()
     property bool forceRequest: false
     property bool queuedForce: false
+    readonly property int collectionInterval: Usage.refreshIntervalMs(pluginData.refreshInterval)
     readonly property string scriptPath: decodeURIComponent(Qt.resolvedUrl("get-ai-usage").toString().replace(/^file:\/\//, ""))
 
     function refresh(force) {
         if (collector.running) {
-            // A click that lands during the 30-second poll used to vanish. Hold it
-            // instead: the button has to mean something every time it is pressed.
+            // Preserve manual refresh requests while collection is running.
             queuedForce = queuedForce || force === true;
             return;
         }
@@ -36,7 +37,6 @@ PluginComponent {
         onTriggered: root.refresh(false)
     }
     Timer {
-        // Runs the held click once the process has actually let go of `running`.
         id: queuedRefresh
         interval: 0
         onTriggered: root.refresh(true)
@@ -50,13 +50,13 @@ PluginComponent {
                     var result = JSON.parse(text);
                     if (result.version !== 1 || !Array.isArray(result.accounts))
                         throw new Error("schema");
-                    // Reassigning an identical snapshot rebuilds every pill delegate,
-                    // so compare before publishing; checkedAt alone is not a change.
+                    // Avoid rebuilding delegates for identical account data.
                     var payload = JSON.stringify(result.accounts);
                     if (payload !== root.lastPayload) {
                         root.lastPayload = payload;
                         root.snapshot = result;
                     }
+                    root.now = Date.now();
                     root.collectorError = "";
                 } catch (error) {
                     root.collectorError = "Could not read usage data. Check that Python 3 is installed and run get-ai-usage in a terminal.";
@@ -67,8 +67,6 @@ PluginComponent {
         onExited: (exitCode, exitStatus) => {
             if (exitCode !== 0)
                 root.collectorError = "The usage collector could not finish. Run get-ai-usage in a terminal to check the installation.";
-            // One click forces one check; leaving the flag up would have made every
-            // background poll a forced one.
             root.forceRequest = false;
             if (root.queuedForce) {
                 root.queuedForce = false;
@@ -77,15 +75,14 @@ PluginComponent {
         }
     }
     Timer {
-        // Local credential/cache check only. The collector controls API refresh/backoff.
-        // Every tick re-scans local session logs, so keep it coarse; nothing rendered
-        // from `now` is finer than a minute.
-        interval: 30000
+        interval: root.collectionInterval
         repeat: true; running: true; triggeredOnStart: true
-        onTriggered: {
-            root.now = Date.now();
-            root.refresh(false);
-        }
+        onTriggered: root.refresh(false)
+    }
+    Timer {
+        interval: 60000
+        repeat: true; running: true
+        onTriggered: root.now = Date.now()
     }
     horizontalBarPill: Component {
         AIUsagePill {

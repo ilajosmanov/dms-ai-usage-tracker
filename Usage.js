@@ -25,12 +25,17 @@ function accentText(provider, isLightMode) {
     return isLightMode ? entry.accentOnLight : entry.accent;
 }
 
+function refreshIntervalMs(minutes) {
+    var value = Number(minutes);
+    if (!isFinite(value) || value <= 0)
+        value = 2;
+    return Math.round(Math.max(2, Math.min(30, value)) * 60000);
+}
+
 function brandLabel(provider) {
     return brand(provider).label;
 }
 
-// Column order, primary first. Both providers are always shown; the setting
-// only decides which one takes the left column.
 function orderedProviders(primary) {
     var ids = PROVIDERS.map(function(p) { return p.id; });
     if (ids.indexOf(primary) < 1)
@@ -53,14 +58,6 @@ function percent(window) {
 
 var SEVERITY_RANK = {critical: 3, warning: 2, normal: 1};
 
-// A subscription is not one meter. Claude alone reports a five-hour session, a
-// rolling week, and a week per model, and any of them can be the wall you hit
-// first. Ranking them by fullness is the only reading that answers "how much room
-// is left": a session meter at 0% one minute into a fresh window is true and
-// says nothing, while the weekly one beside it sits at 97%.
-//
-// The provider's own flags break ties only. They are advisory, Codex sends
-// neither, and a plainly fuller meter must always outrank a label.
 function urgency(window) {
     if (!window || typeof window.used !== "number" || !isFinite(window.used))
         return null;
@@ -78,9 +75,6 @@ function outranks(candidate, best) {
     return false;
 }
 
-// The binding constraint: the window the panel marks as limiting and the account
-// picker opens on. The pill charts `barWindow` instead, which is a different
-// question -- "what am I spending right now" rather than "what stops me first".
 function primaryWindow(account) {
     var windows = (account && account.windows) || [];
     var best = null;
@@ -94,8 +88,6 @@ function primaryWindow(account) {
             rank = score;
         }
     }
-    // No window carries a usable number. Keep the provider's first one so the
-    // panel still names a limit instead of going blank.
     return best || windows[0];
 }
 
@@ -104,17 +96,6 @@ function primaryUsage(account) {
     return window && typeof window.used === "number" && isFinite(window.used) ? window.used : null;
 }
 
-// The window the bar charts: the shortest one the provider reports, which is
-// Claude's five-hour session and Codex's week when it publishes nothing shorter.
-//
-// Deliberately not the fullest one. A bar is read as a rate -- how fast the
-// current stretch of work is burning quota -- and a meter that swapped between a
-// session and a rolling week as either grew fuller would be charting two
-// different quantities minute to minute, with no way to tell from the bar which
-// one it meant. The collector's `tracked_window` pins the sparkline to the
-// shortest window for the same reason, so the pill and that history now speak
-// about the same meter. What stops you first still has a home: the panel names
-// its limiting window, and `nearLimit` still colors a week that is nearly spent.
 function barWindow(account) {
     var windows = (account && account.windows) || [];
     var best = null;
@@ -126,8 +107,6 @@ function barWindow(account) {
         if (!best || candidate.duration < best.duration)
             best = candidate;
     }
-    // Nothing carries both a reading and a length, so there is no "shortest" to
-    // pick. Fall back to the panel's choice rather than leaving the pill blank.
     return best || primaryWindow(account);
 }
 
@@ -141,8 +120,6 @@ function barAccounts(codex, claude) {
 }
 
 
-// Paces the window the bar is showing. The arrow sits against that number, so it
-// has to be an opinion about the same meter.
 function overPace(account, now) {
     if (!account || account.status !== "ok") return false;
     var pacing = pace(barWindow(account), now);
@@ -153,8 +130,6 @@ function planLabel(plan) {
     return String(plan || "").replace(/_/g, " ").replace(/\b[a-z]/g, function(c) { return c.toUpperCase(); });
 }
 
-// A 185px column cannot hold "Default Claude Max 5x" next to the provider name
-// it already repeats, so drop the redundant words and keep the plan itself.
 function shortPlan(plan, name) {
     var text = planLabel(plan);
     if (name)
@@ -162,8 +137,6 @@ function shortPlan(plan, name) {
     return text.replace(/^\s*Default\b/i, "").replace(/\s+/g, " ").trim();
 }
 
-// Window labels lose their "window" suffix in the columns; the full label stays
-// in the row tooltip and the accessible name.
 function shortWindow(label) {
     return String(label || "").replace(/\s*window$/i, "").replace(/(\d+)\s*days$/i, "$1d").trim();
 }
@@ -199,8 +172,6 @@ function countdown(resetAt, now) {
     return "Resets in " + hours + "h " + minutes % 60 + "m";
 }
 
-// The column repeats "resets in" once per provider at most, so the rows carry
-// the bare duration.
 function resetShort(resetAt, now) {
     var text = countdown(resetAt, now);
     return text.indexOf("Resets in ") === 0 ? text.slice(10) : "—";
@@ -226,10 +197,6 @@ function age(updatedAt, now) {
     return "Updated " + Math.floor(minutes / 60) + "h ago";
 }
 
-// One header, two providers, and they can be hours apart: a provider serving
-// saved usage would otherwise pin this clock and make a refresh that did work
-// look like one that did nothing. So the header reports the live columns, and a
-// saved column states its own age next to its own numbers instead.
 function latestUpdate(snapshot) {
     var accounts = (snapshot.accounts || []);
     var live = accounts.filter(function(a) { return a.status === "ok"; });
@@ -250,10 +217,6 @@ function savedAge(updatedAt, now) {
     return Math.floor(minutes / 60) + "h old";
 }
 
-// A reading the widget did not take itself. The client that took it is named,
-// because "41%" and "41% as Codex last measured it" are different claims and only
-// the second one is true. The age travels with it: the header clock speaks for our
-// own checks, and this is not one of them.
 function originNote(account, now) {
     if (!account || !account.origin)
         return "";
@@ -261,8 +224,6 @@ function originNote(account, now) {
     return "via " + account.origin + (when ? " · " + when : "");
 }
 
-// The header clock speaks for the live columns only, so a column showing an older
-// reading dates itself — and says whose reading it is, when it is not ours.
 function savedTitle(account, now) {
     var origin = account && account.origin;
     var when = savedAge(account && account.updatedAt, now);
@@ -294,8 +255,6 @@ function providerAccounts(snapshot, provider) {
 }
 
 function representativeAccount(accounts) {
-    // Both the pill and the initial popout show the highest primary utilization.
-    // Keep source order intact for the account selector, including tied/unknown meters.
     var selected = null;
     var highest = -1;
     accounts.forEach(function(account) {
@@ -323,9 +282,6 @@ function days(history, now) {
     return result;
 }
 
-// The daily peak follows the shortest window for its whole life, which is rarely
-// the headline one. Saying which window it charts is the difference between a
-// number and a claim.
 function historyLabel(history) {
     var spans = (history || []).map(function(h) { return h.duration; })
         .filter(function(d) { return typeof d === "number" && isFinite(d) && d > 0; });

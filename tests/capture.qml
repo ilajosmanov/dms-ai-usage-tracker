@@ -3,6 +3,7 @@ import QtQuick.Controls
 import Quickshell
 import Quickshell.Io
 import qs.Common
+import qs.DCommon.Common as DC
 import qs.Plugin
 import "Plugin/Usage.js" as Usage
 
@@ -10,6 +11,10 @@ import "Plugin/Usage.js" as Usage
 // on real collector output and the stock dank theme.
 ShellRoot {
     id: capture
+    Component.onCompleted: {
+        DC.Style.theme = Theme;
+        DC.Style.settings = SettingsData;
+    }
     property var data: ({accounts: []})
     property bool ready: false
 

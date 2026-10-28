@@ -36,7 +36,7 @@ PluginSettings {
     SliderSetting {
         settingKey: "refreshInterval"
         label: "Refresh interval"
-        description: "Automatic collection interval; Claude uses at least five minutes. New logins are checked every thirty seconds. Right-click or press Refresh to check usage now."
+        description: "Check local credentials and usage at this interval; Claude requests are at least five minutes apart. Right-click or press Refresh to check now."
         defaultValue: 2; minimum: 2; maximum: 30; unit: "min"
     }
     StringSetting {

@@ -2,6 +2,22 @@
 
 All notable changes to this plugin. Versions follow [semantic versioning](https://semver.org).
 
+## 1.1.2 — 2026-10-28
+
+### Fixed
+
+- Run automatic credential and session scans at the configured refresh interval
+  instead of every thirty seconds; update countdowns without launching Python.
+- Use native Dux action buttons and tooltips, including keyboard focus and hover
+  behavior, and theme typography, spacing, and radii while retaining provider brand colors.
+- Enforce the session scan budget within large files, resume unfinished scans,
+  bound JSONL record memory, and cap Codex head scans even without a model record.
+- Ignore nonfinite token counts and malformed cache entries; preserve cached
+  OpenCode totals without walking logs or opening databases on refresh contention.
+- Avoid rewriting unchanged activity caches and tolerate disappearing log files.
+- Initialize the shared Dux theme in preview tests and registry captures; make
+  preview assertions fail immediately instead of waiting for a timeout.
+
 ## 1.1.1 — 2026-10-28
 
 ### Fixed
