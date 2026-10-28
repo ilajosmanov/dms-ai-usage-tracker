@@ -2,7 +2,6 @@
 """Install a development symlink and add Subscription Usage Meter to the first enabled DankBar."""
 import argparse
 import json
-import os
 import shutil
 import subprocess
 import sys
@@ -13,11 +12,12 @@ from pathlib import Path
 repo = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(repo))
 from collector.jsonfile import atomic_json
+from collector.config import shell_config_dir
 
 parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument("--no-bar", action="store_true", help="Install only; select the widget in DMS settings yourself.")
 args = parser.parse_args()
-config = Path(os.environ.get("XDG_CONFIG_HOME", str(Path.home() / ".config"))) / "DankMaterialShell"
+config = shell_config_dir()
 target = config / "plugins/aiUsage"
 target.parent.mkdir(parents=True, exist_ok=True)
 if target.is_symlink() and target.resolve() == repo:
@@ -50,13 +50,17 @@ if not args.no_bar and settings_path.is_file():
             print("Added to", bar.get("name", "DankBar"), "· settings backup:", backup)
 
 if shutil.which("dms"):
-    for command in (["dms", "ipc", "call", "plugin-scan", "rescan", "aiUsage"],
+    # A fresh install is not known to the shell yet: rescan only accepts IDs
+    # already discovered by scan. Discovery completes asynchronously.
+    for command in (["dms", "ipc", "call", "plugin-scan", "scan"],
                     ["dms", "ipc", "call", "plugins", "enable", "aiUsage"]):
         result = subprocess.run(command, text=True, capture_output=True, timeout=10)
-        for _ in range(5):
+        for _ in range(20):
             if "PLUGIN_NOT_FOUND" not in result.stdout:
                 break
             time.sleep(0.2)
             result = subprocess.run(command, text=True, capture_output=True, timeout=10)
         print(result.stdout.strip() or result.stderr.strip())
-print("If the widget is not visible yet, enable Subscription Usage Meter in DMS Settings → Plugins and add it under DankBar widgets.")
+        if result.returncode or "ERROR" in result.stdout or "FAILED" in result.stdout or "PLUGIN_NOT_FOUND" in result.stdout:
+            raise SystemExit("Plugin linked, but activation failed. Restart DMS and run this installer again.")
+print("Installation complete. If needed, select Subscription Usage Meter in DMS Settings → Bar widgets.")

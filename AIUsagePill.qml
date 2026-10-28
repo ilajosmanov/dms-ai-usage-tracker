@@ -1,6 +1,6 @@
 import QtQuick
 import qs.Common
-import qs.Widgets
+import qs.DCommon.Widgets
 import "Usage.js" as Usage
 
 Item {
@@ -89,7 +89,7 @@ Item {
                 // digits of both providers still start on the same pixel.
                 LayoutMirroring.enabled: root.vertical
                 opacity: root.failed || modelData.status === "stale" ? 0.55 : 1
-                DankIcon {
+                DIcon {
                     objectName: "paceArrow-" + meter.modelData.provider
                     visible: meter.overPace
                     anchors.verticalCenter: parent.verticalCenter

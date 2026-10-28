@@ -1,7 +1,7 @@
 import QtQuick
 import QtQuick.Controls
 import qs.Common
-import qs.Widgets
+import qs.DCommon.Widgets
 import "Usage.js" as Usage
 
 // One provider owns one column: its plan, its limits, its week and its models.
@@ -83,7 +83,7 @@ Column {
                 radius: 10
                 color: parent.hovered ? Theme.surfaceContainerHigh : "transparent"
             }
-            contentItem: DankIcon { name: "open_in_new"; size: 14; color: parent.hovered ? Theme.surfaceText : Theme.surfaceVariantText }
+            contentItem: DIcon { name: "open_in_new"; size: 14; color: parent.hovered ? Theme.surfaceText : Theme.surfaceVariantText }
             onClicked: root.dashboardRequested(Usage.dashboardUrl(root.provider))
         }
     }
@@ -123,7 +123,7 @@ Column {
         elide: Text.ElideRight
     }
 
-    DankDropdown {
+    DDropdown {
         objectName: "accountSelector-" + root.provider
         visible: root.accounts.length > 1
         text: ""

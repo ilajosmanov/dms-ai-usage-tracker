@@ -1,7 +1,7 @@
 # Subscription Usage Meter
 
 Account-wide Codex and Claude subscription usage in one native, theme-aware DankBar
-widget for [Dank Material Shell](https://danklinux.com).
+widget for [Dux Shell](https://duxlabs.dev) (formerly Dank Material Shell).
 
 ![The bar pill above the popout it opens: both providers side by side with plan, quota windows, pacing, daily peak, and models this week](docs/screenshot.png)
 
@@ -14,7 +14,7 @@ this week.
 
 | | |
 | --- | --- |
-| Dank Material Shell | 1.6 or newer |
+| Dux Shell (DMS) | 2.0 or newer |
 | Python | 3.10 or newer, standard library only |
 | Codex usage | an existing Codex, pi, OMP, or opencode login |
 | Claude usage | a recent `claude` executable on `PATH` (verified with Claude Code 2.1.263) |
@@ -27,14 +27,14 @@ clients already wrote and never asks you to paste a token.
 ### From the plugin registry
 
 In DMS: **Settings → Plugins**, find **Subscription Usage Meter** in the registry,
-install it, then add the widget under **Settings → DankBar → Widgets**.
+install it, then add the widget under **Settings → Bar widgets**.
 
 ### From git
 
 ```sh
-mkdir -p ~/.config/DankMaterialShell/plugins
+mkdir -p ~/.config/dms/plugins
 git clone https://github.com/ilajosmanov/dms-ai-usage-tracker \
-  ~/.config/DankMaterialShell/plugins/aiUsage
+  ~/.config/dms/plugins/aiUsage
 dms restart
 ```
 
@@ -46,15 +46,15 @@ Then enable it under **Settings → Plugins** and add the widget to a bar.
 python3 scripts/install.py
 ```
 
-Links this checkout into `~/.config/DankMaterialShell/plugins/aiUsage`, enables it,
+Links this checkout into `~/.config/dms/plugins/aiUsage`, enables it,
 and adds it to the first enabled bar. Existing settings are preserved and backed
 up before modification. Keep this checkout in place. Use `--no-bar` to place the
-widget yourself under DMS Settings → DankBar → Widgets.
+widget yourself under DMS Settings → Bar widgets.
 
 ## Uninstall
 
 Remove the widget from the bar, disable the plugin under Settings → Plugins, and
-delete `~/.config/DankMaterialShell/plugins/aiUsage`. Cached usage lives in
+delete `~/.config/dms/plugins/aiUsage`. Cached usage lives in
 `~/.cache/dms-ai-usage/` and can be deleted with it.
 
 ## Usage
@@ -275,8 +275,11 @@ python3 scripts/preview.py            # render fourteen native QML states offscr
 
 Optional `--config /path/to/settings.json` accepts plugin settings, for example
 `{"refreshInterval": 5}`. Otherwise settings come from DMS's
-`plugin_settings.json` under `aiUsage`. The interval bounds API polling only; a client
-that is running keeps the columns current between those checks at no cost, so a longer
+`~/.config/dms/plugin_settings.json` under `aiUsage` (honoring `XDG_CONFIG_HOME`).
+The collector and development installer also recognize the legacy
+`DankMaterialShell` directory when the `dms` directory does not exist.
+The interval bounds API polling only; a client that is running keeps the columns
+current between those checks at no cost, so a longer
 interval is usually the better setting.
 
 `scripts/preview.py` renders fourteen QML states offscreen against installed DMS
@@ -295,6 +298,10 @@ percentages and token totals — look at it before committing one. The card over
 the plugin's own name, so regenerate it whenever the bar or the popout changes.
 
 Set `DMS_QML_ROOT` if DMS is installed somewhere other than `/usr/share/quickshell/dms`.
+On Dux 2.0, shell services require a window-system backend. Run
+`DMS_PREVIEW_PLATFORM=wayland python3 scripts/preview.py` from your Wayland session
+if the offscreen preview reports "No PanelWindow backend loaded". This opens a
+temporary preview window using demo data. The same option works with `scripts/capture.py`.
 
 DMS can cache child QML components during plugin reloads. Restart DMS after updating
 the plugin if old controls remain visible.

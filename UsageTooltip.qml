@@ -2,7 +2,7 @@ import QtQuick
 import QtQuick.Controls
 import QtQuick.Window
 import qs.Common
-import qs.Widgets
+import qs.DCommon.Widgets
 
 ToolTip {
     id: root

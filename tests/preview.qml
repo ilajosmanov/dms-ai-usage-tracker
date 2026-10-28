@@ -60,11 +60,16 @@ ShellRoot {
         id: window
         title: "Subscription Usage Meter Preview"
         visible: true
+        // Keep the native window stable while test data changes panel height.
+        // Wayland resize acknowledgements can otherwise lag behind a stage.
         implicitWidth: 440
-        implicitHeight: 560
+        implicitHeight: 800
+        minimumSize: Qt.size(440, 800)
+        maximumSize: minimumSize
         color: Theme.surface
         Rectangle {
             id: frame
+            anchors.centerIn: parent
             width: preview.stage === 7 ? 120 : preview.isBarStage ? 240 : 440
             height: preview.stage === 7 ? 120 : preview.isBarStage ? 64
                 : preview.stage === 4 ? 300 : Math.ceil(dashboard.implicitHeight) + 16
@@ -93,6 +98,9 @@ ShellRoot {
         interval: 800
         repeat: false
         onTriggered: {
+            if (window.width !== 440 || window.height !== 800)
+                throw new Error("Compositor resized the fixed preview window: "
+                    + window.width + "x" + window.height);
             if (!preview.isBarStage) {
                 var codexColumn = preview.column("codex");
                 var claudeColumn = preview.column("claude");
@@ -313,7 +321,7 @@ ShellRoot {
                 preview.stage++;
                 if (preview.stage >= preview.names.length) {
                     console.log("AI_USAGE_PREVIEW_COMPLETE");
-                    Quickshell.quit();
+                    Qt.exit(0);
                     return;
                 }
                 var data = JSON.parse(JSON.stringify(preview.originalData));

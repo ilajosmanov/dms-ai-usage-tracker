@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Render native QML screenshots against installed DMS components, offscreen."""
+"""Render native QML screenshots against installed DMS components."""
 import os
 import shutil
 import subprocess
@@ -26,7 +26,8 @@ with tempfile.TemporaryDirectory(prefix="dms-ai-preview-") as staging:
     config = staging / "config"
     config.mkdir()
     env = {**os.environ, "XDG_CONFIG_HOME": str(config), "XDG_CACHE_HOME": str(staging / "cache"),
-           "XDG_STATE_HOME": str(staging / "state"), "QT_QPA_PLATFORM": "offscreen",
+           "XDG_STATE_HOME": str(staging / "state"),
+           "QT_QPA_PLATFORM": os.environ.get("DMS_PREVIEW_PLATFORM", "offscreen"),
            "DMS_SOCKET": "", "NIRI_SOCKET": "", "HYPRLAND_INSTANCE_SIGNATURE": "",
            "QT_QUICK_BACKEND": "software", "AI_USAGE_PREVIEW_OUT": str(rendered)}
     process = subprocess.Popen(["quickshell", "-p", str(staging), "--no-color"], env=env,
@@ -38,20 +39,23 @@ with tempfile.TemporaryDirectory(prefix="dms-ai-preview-") as staging:
             selector.register(process.stdout, selectors.EVENT_READ)
             deadline = time.monotonic() + 30
             while time.monotonic() < deadline:
-                if expected.issubset({p.name for p in rendered.iterdir()}):
-                    complete = True
-                    break
                 if not selector.select(timeout=1):
+                    # Shell services can spawn children that inherit stdout;
+                    # their open pipe must not hide the test process's exit.
+                    if process.poll() is not None:
+                        complete = process.returncode == 0 and expected.issubset(
+                            {p.name for p in rendered.iterdir()})
+                        break
                     continue
                 chunk = os.read(process.stdout.fileno(), 65536)
                 if not chunk:
+                    complete = process.wait(timeout=3) == 0 and expected.issubset(
+                        {p.name for p in rendered.iterdir()})
                     break
                 logs += chunk
-                if b"AI_USAGE_PREVIEW_COMPLETE" in logs:
-                    complete = True
-                    break
     finally:
-        process.terminate()
+        if process.poll() is None:
+            process.terminate()
         try:
             process.wait(timeout=3)
         except subprocess.TimeoutExpired:
@@ -60,6 +64,7 @@ with tempfile.TemporaryDirectory(prefix="dms-ai-preview-") as staging:
         process.stdout.close()
     print(logs.decode(errors="replace"))
     if not complete or any(x in logs for x in (b"ReferenceError", b"TypeError", b"Error:", b"Unable to assign", b"ERROR")):
+        print("Process exit:", process.returncode, "Missing captures:", sorted(expected - {p.name for p in rendered.iterdir()}))
         raise SystemExit("QML preview failed; inspect the log above.")
     for name in expected:
         shutil.copyfile(rendered / name, output / name)

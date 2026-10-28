@@ -34,7 +34,8 @@ with tempfile.TemporaryDirectory(prefix="dms-ai-capture-") as staging:
     config = staging / "config"
     config.mkdir()
     env = {**os.environ, "XDG_CONFIG_HOME": str(config), "XDG_CACHE_HOME": str(staging / "cache"),
-           "XDG_STATE_HOME": str(staging / "state"), "QT_QPA_PLATFORM": "offscreen",
+           "XDG_STATE_HOME": str(staging / "state"),
+           "QT_QPA_PLATFORM": os.environ.get("DMS_PREVIEW_PLATFORM", "offscreen"),
            "DMS_SOCKET": "", "NIRI_SOCKET": "", "HYPRLAND_INSTANCE_SIGNATURE": "",
            "QT_QUICK_BACKEND": "software", "AI_USAGE_CAPTURE_OUT": str(rendered)}
     process = subprocess.Popen(["quickshell", "-p", str(staging), "--no-color"], env=env,

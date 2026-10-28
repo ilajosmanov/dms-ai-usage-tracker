@@ -14,6 +14,7 @@ from pathlib import Path
 
 from . import activity, local, claude
 from .credentials import discover
+from .config import shell_config_dir
 from .jsonfile import atomic_json, private_dir, read_json
 from .providers import UsageError, fetch, hidden, number
 
@@ -300,7 +301,7 @@ def main():
         from .demo import snapshot
         print(json.dumps(snapshot()))
         return
-    config = read_json(args.config) if args.config else read_json(Path(os.environ.get("XDG_CONFIG_HOME", str(Path.home() / ".config"))) / "DankMaterialShell/plugin_settings.json").get("aiUsage", {})
+    config = read_json(args.config) if args.config else read_json(shell_config_dir() / "plugin_settings.json").get("aiUsage", {})
     cache_dir = private_dir(Path(os.environ.get("XDG_CACHE_HOME", str(Path.home() / ".cache"))) / "dms-ai-usage")
     with (cache_dir / "refresh.lock").open("a") as lock:
         os.chmod(cache_dir / "refresh.lock", 0o600)

@@ -1,7 +1,7 @@
 import QtQuick
 import QtQuick.Controls
 import qs.Common
-import qs.Widgets
+import qs.DCommon.Widgets
 import "Usage.js" as Usage
 
 Column {
@@ -14,6 +14,7 @@ Column {
     property real now: Date.now()
     property real maxBodyHeight: 1000
     property var closePopout: null
+    property var parentPopout: null
     signal refreshRequested()
     signal dashboardRequested(string url)
     // Column order only; both providers are always on screen.
@@ -22,6 +23,8 @@ Column {
     padding: 12
     spacing: 12
     width: 424
+
+    PopoutOutline { popout: root.parentPopout }
 
     Item {
         id: header
@@ -63,7 +66,7 @@ Column {
                 Accessible.name: "Refresh usage"
                 UsageTooltip { visible: parent.hovered; text: "Refresh usage" }
                 background: Rectangle { radius: 12; color: parent.hovered ? Theme.surfaceContainerHigh : "transparent" }
-                contentItem: DankIcon { name: "refresh"; size: 15; color: root.loading ? Theme.surfaceVariantText : Theme.surfaceText }
+                contentItem: DIcon { name: "refresh"; size: 15; color: root.loading ? Theme.surfaceVariantText : Theme.surfaceText }
                 onClicked: root.refreshRequested()
             }
             ToolButton {
@@ -74,7 +77,7 @@ Column {
                 Accessible.name: "Close usage"
                 UsageTooltip { visible: parent.hovered; text: "Close" }
                 background: Rectangle { radius: 12; color: parent.hovered ? Theme.surfaceContainerHigh : "transparent" }
-                contentItem: DankIcon { name: "close"; size: 15; color: Theme.surfaceText }
+                contentItem: DIcon { name: "close"; size: 15; color: Theme.surfaceText }
                 onClicked: { if (root.closePopout) root.closePopout(); }
             }
         }
@@ -108,7 +111,7 @@ Column {
         contentHeight: columns.implicitHeight
         clip: true
         boundsBehavior: Flickable.StopAtBounds
-        ScrollBar.vertical: DankScrollbar {
+        ScrollBar.vertical: DScrollbar {
             objectName: "usageScrollbar"
             targetFlickable: scroll
         }

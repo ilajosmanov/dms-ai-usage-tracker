@@ -29,8 +29,10 @@ ShellRoot {
         id: window
         title: "Subscription Usage Meter"
         visible: true
-        implicitWidth: 560
-        implicitHeight: 760
+        implicitWidth: frame.width
+        implicitHeight: frame.height
+        minimumSize: Qt.size(frame.width, frame.height)
+        maximumSize: minimumSize
         color: Theme.surfaceContainer
 
         Rectangle {
@@ -83,7 +85,7 @@ ShellRoot {
             frame.grabToImage(function(result) {
                 result.saveToFile(Quickshell.env("AI_USAGE_CAPTURE_OUT"));
                 console.log("AI_USAGE_CAPTURE_COMPLETE " + frame.width + "x" + frame.height);
-                Quickshell.quit();
+                Qt.exit(0);
             });
         }
     }

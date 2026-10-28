@@ -2,6 +2,27 @@
 
 All notable changes to this plugin. Versions follow [semantic versioning](https://semver.org).
 
+## 1.1.1 — 2026-10-28
+
+### Fixed
+
+- Read plugin settings and install the development checkout under the Dux Shell
+  `dms` configuration directory, with a fallback for legacy DMS paths.
+- Replace deprecated widget wrappers with the shared `qs.DCommon.Widgets` types.
+- Discover newly installed plugins before activation, wait for discovery, and
+  report activation failures instead of silently completing installation.
+
+### Changed
+
+- Outline the popout's outer surface, including its curved bar connection, so
+  its edges remain visible against dark backgrounds.
+- Constrain preview windows to a fixed size, center each test state, and wait for a clean
+  test-process exit before accepting screenshots. Replace the unsupported
+  `Quickshell.quit()` call with `Qt.exit(0)`.
+- Require Dux Shell 2.0 or newer and update installation instructions.
+- Allow previews and registry captures to use the Wayland backend required by
+  Dux 2.0 shell services, via `DMS_PREVIEW_PLATFORM=wayland`.
+
 ## 1.1.0 — 2026-09-11
 
 ### Fixed

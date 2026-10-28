@@ -2,7 +2,7 @@
   "id": "aiUsage",
   "name": "Subscription Usage Meter",
   "description": "Account-wide Codex and Claude subscription usage in one segmented bar meter.",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "author": "ilajosmanov",
   "icon": "monitoring",
   "type": "widget",
@@ -10,6 +10,6 @@
   "settings": "./AIUsageSettings.qml",
   "capabilities": ["dankbar-widget"],
   "dependencies": ["python3", "claude"],
-  "requires_dms": ">=1.6.0",
+  "requires_dms": ">=2.0.0",
   "permissions": ["settings_read", "settings_write", "process", "network"]
 }
